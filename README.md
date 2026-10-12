@@ -7,18 +7,17 @@ which can run the water line single threaded: one Purification Unit per cycle, c
 What the fork adds:
 - The [Quantity Controller](#quantity-controller) with four modes: `disabled`, `multiThread`, `singleThread` and `singleThreadBalancing`.
 - T1 and T2 modules, so the Clarifier and the Ozonation unit can be switched on and off too.
-- Units that stop because they ran out of materials stay off ("Admin disabled") until the program restarts, so the Quantity Controller never turns them back on.
+- Units that stop because they ran out of materials stay off ("Admin disabled"), so the Quantity Controller never turns them back on. Switch one back on by hand once it's restocked.
 - The screen shows each water's stock and threshold, and marks the units the Quantity Controller enabled with `*`.
 - Auto update and the installer use this fork's releases.
 
 > [!CAUTION]
-> This version of the program is in beta testing.
-> It requires GTNH **2.9** or newer and will **not** work on 2.8 and older versions.
+> For GTNH **2.9** and newer only.
 > Its `config.lua` has new settings (`t1`, `t2` and `quantityController`), so a config from the original program will not work.
 
 > [!CAUTION]
-> Included in GTNH Version 2.8 and above, OpenComputers Transposers fluid transfer rates are upgradable beyond the base value when crafted with an appropriate Fluid Regulator in an Assembler.
-> You will need to use at least an LuV Fluid Regulator to correct program work.
+> The fluid transfer rate of an OpenComputers Transposer depends on the Fluid Regulator it was crafted with in an Assembler.
+> Use transposers made with at least an LuV Fluid Regulator, or the program can't move fluids fast enough.
 >
 > ![Transposer](/docs/transposer.png)
 
@@ -29,6 +28,7 @@ What the fork adds:
 - [Water Line Setup](#water-line-setup)
 - [Quantity Controller](#quantity-controller)
 - [Configuration](#configuration)
+- [Credits](#credits)
 
 <a id="information"></a>
 
@@ -70,9 +70,8 @@ BM       0/64.0k
 ## Installation
 
 > [!CAUTION]
-> If you are using 8 java, the installer will not work for you. 
-> The only way to install the program is to manually transfer it to your computer.
-> The problem is on the java side.
+> On Java 8 the download from GitHub fails, because Java rejects GitHub's certificates.
+> Then the only way to install the program is to copy its files to the computer by hand.
 
 To install program, you need a server with:
 - Graphics Card (Tier 3): 1
@@ -94,10 +93,17 @@ wget -f https://raw.githubusercontent.com/Willshaper/GTNH-OC-Water-Line-Control/
 ```
 
 The installer of the original program (`pastebin run ESUAMAGx`) installs the original, without the Quantity Controller.
-If you wish you can add the program to auto download, for manual start write a command.
+
+To start the program, run:
 
 ```shell
 main
+```
+
+To start it whenever the computer boots, add it to `/home/.shrc`:
+
+```shell
+echo main >> /home/.shrc
 ```
 
 > [!NOTE]  
@@ -119,12 +125,6 @@ The program interface is configured for a 3x2 monitor.
 > If you click on it, it will be copied.
 >
 > <img src="docs/analyzer.png" alt="Analyzer" width="120"/>
-
-<br/>
-
-> [!NOTE]  
-> There's a save of the world with a setup of water line. Game version 2.7.3
-> [Save](https://github.com/Navatusein/GTNH-OC-Water-Line-Control/raw/main/water-line-world.zip)
 
 ### Water Purification Plant
 
@@ -183,8 +183,7 @@ t2 = { -- Controller for T2 Ozonated Water (Grade 2)
 ### [T3] Flocculated Water (Grade 3)
 
 > [!CAUTION]
-> In GTNH version 2.8, added tiers for transposers.
-> For the program to work correctly, you need to use at least a LUV pump with a transposer.
+> Use transposers made with at least an LuV Fluid Regulator.
 
 #### Components
 
@@ -218,8 +217,7 @@ t3 = { -- Controller for T3 Flocculated Water (Grade 3)
 ### [T4] pH Neutralized Water (Grade 4)
 
 > [!CAUTION]
-> In GTNH version 2.8, added tiers for transposers.
-> For the program to work correctly, you need to use at least a LUV pump with a transposer.
+> Use transposers made with at least an LuV Fluid Regulator.
 
 #### Components
 
@@ -248,13 +246,12 @@ t4 = { -- Controller for T4 pH Neutralized Water (Grade 4)
 
 #### Example setup
 
-![T3 Setup](/docs/t4-setup.png)
+![T4 Setup](/docs/t4-setup.png)
 
 ### [T5] Extreme-Temperature Treated Water (Grade 5)
 
 > [!CAUTION]
-> In GTNH version 2.8, added tiers for transposers.
-> For the program to work correctly, you need to use at least a LUV pump with a transposer.
+> Use transposers made with at least an LuV Fluid Regulator.
 
 #### Components
 
@@ -322,8 +319,7 @@ t6 = { -- Controller for T6 Ultraviolet Treated Electrically Neutral Water (Grad
 ### [T7] Degassed Decontaminant-Free Water (Grade 7)
 
 > [!CAUTION]
-> In GTNH version 2.8, added tiers for transposers.
-> For the program to work correctly, you need to use at least a LUV pump with a transposer.
+> Use transposers made with at least an LuV Fluid Regulator.
 
 #### Components
 
@@ -335,10 +331,10 @@ To build a setup, you will need:
 #### Description
 
 > [!NOTE]  
-> If you play on version 2.7 do not forget to install `Degasser Control Hatch` in the structure, 
-> although it is not necessary for the program, but without it the structure will not work
+> The structure needs a `Degasser Control Hatch` to form. The program doesn't use it: it reads the control signal from the controller.
 
 To use the module for t7 water in the `config.lua`
+file you need to enable the module by changing `enable = false` to `enable = true`.
 You must also specify the addresses of the transposers: 
 `inertGasTransposerAddress` here is the address of the transposer that will supply Helium, Neon, Krypton, Xenon.
 `superConductorTransposerAddress` here is the address of the transposer that will supply Superconductor Base.
@@ -375,6 +371,7 @@ To build a setup, you will need:
 #### Description
 
 To use the module for t8 water in the `config.lua`
+file you need to enable the module by changing `enable = false` to `enable = true`.
 You must also specify the address of the transposer in the `transposerAddress` 
 field, which is located under the hv input bus and to which the interface with the Quarks connected.
 Also the address of the adapter connected to me interface in the `subMeInterfaceAddress` field.
@@ -388,7 +385,7 @@ The idea is that a separate subnet is made for quarks. The Absolute Baryonic Per
 Unaligned Quark Releasing Catalysts after crafting is complete. The computer looks to see which quarks are less than the specified 
 number (`maxQuarkCount` in the default configs is 4) and orders them. That is, the subnet must have at least 2 CPUs and a 
 Hyper-Intensity Laser Engraver connected to order quarks. It is possible without a subnet, but the condition is that the computer can order quarks. 
-Stabilized Baryonic Matter can be fed into the subsystem or directly into the Laser Engraver.
+Stabilised Baryonic Matter can be fed into the subsystem or directly into the Laser Engraver.
 
 > [!NOTE]  
 > Maximum 42 infinity ingots used per cycle. But usually less. Consumption can be 6, 18, 42 ingots per cycle. Depends on luck.
@@ -415,7 +412,7 @@ t8 = { -- Controller for T8 Subatomically Perfect Water (Grade 8)
 ## Quantity Controller
 
 The Quantity Controller reads how much of each water, and of Stabilised Baryonic Matter, is in your ME network.
-About 4 seconds before each cycle of the Water Purification Plant ends, it chooses which units may start in the next cycle,
+About 10 seconds before each cycle of the Water Purification Plant ends, it chooses which units may start in the next cycle,
 and turns every other unit off. A unit that is turned off still finishes the cycle it is running.
 
 Single threaded, each unit can get enough parallels to use all the power of the Water Purification Plant.
@@ -442,7 +439,9 @@ In the single thread modes, every unit of the line needs its module, or the unit
 
 T8 also runs when Stabilised Baryonic Matter is below its threshold. T8 makes it, and it's needed to realign quark catalysts.
 
-A unit that ran out of materials is shown as "Admin disabled" and is never enabled again until you restart the program.
+A unit that ran out of materials is shown as "Admin disabled", and the Quantity Controller doesn't enable it again.
+Once it's restocked, switch the unit back on by hand (soft mallet, or the button in its GUI): the program then uses it again.
+In the multi and single thread modes it turns the unit off again until it chooses that unit, so two units never start in the same cycle.
 
 #### Quantity Controller Config part
 
@@ -517,6 +516,8 @@ logger = {
   }
 },
 ```
+
+<a id="credits"></a>
 
 ## Credits
 

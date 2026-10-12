@@ -4,8 +4,8 @@ local term = require("term")
 local classBuilder = require("lib.class-builder.index")
 local componentDiscover = require("lib.component-discover.index")
 
----Ticks before the end of a cycle when "cycle_pre_end" is sent
-local preEndTicks = 80
+---Ticks before the end of a cycle when "cycle_pre_end" is sent. 10 seconds, so a slow loop with all eight tiers still sees it
+local preEndTicks = 200
 
 ---@class LineController
 ---@field lastWorkProgress integer

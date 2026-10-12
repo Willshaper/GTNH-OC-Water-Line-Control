@@ -84,11 +84,30 @@ end
 
 ---Loop
 function quantityController:loop()
+  self:checkAdminResets()
+
   if self.controlMode == "disabled" then
     return
   end
 
   self:updateWaterLevels()
+end
+
+---Let units that were enabled by hand after a fault be used again
+---@private
+function quantityController:checkAdminResets()
+  for tier = 1, 8 do
+    local controller = self.controllers["t"..tier]
+
+    if controller ~= nil and controller:checkAdminReset() then
+      event.push("log_info", "[T"..tier.."] Enabled by hand, no longer admin disabled")
+
+      -- The Quantity Controller decides when it runs again, so two units never start in the same cycle
+      if self.controlMode ~= "disabled" then
+        controller:setEnabled(self.isTierActive[tier])
+      end
+    end
+  end
 end
 
 ---Get current control mode

@@ -35,7 +35,17 @@ local function getLatestVersion()
 
   local loader = load(result)
 
-  return loader and loader() or nil
+  if loader == nil then
+    return nil
+  end
+
+  local loadSuccess, version = pcall(loader)
+
+  if not loadSuccess or type(version) ~= "table" then
+    return nil
+  end
+
+  return version
 end
 
 if not component.isAvailable("internet") then

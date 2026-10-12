@@ -102,7 +102,7 @@ function quantityController:checkAdminResets()
     if controller ~= nil and controller:checkAdminReset() then
       event.push("log_info", "[T"..tier.."] Enabled by hand, no longer admin disabled")
 
-      -- The Quantity Controller decides when it runs again, so two units never start in the same cycle
+      -- The Quantity Controller decides when it runs again, so it doesn't start next to the unit it chose
       if self.controlMode ~= "disabled" then
         controller:setEnabled(self.isTierActive[tier])
       end
@@ -159,7 +159,7 @@ function quantityController:updateControllerEnablement()
     end
   elseif self.controlMode == "singleThreadBalancing" then
     -- The tier with the least water (below its threshold) runs, lower tiers win ties.
-    -- A tier below minQty runs first, so higher tiers never start without enough input
+    -- A tier below minQty runs first, so higher tiers don't start without enough input
     local winner = nil
 
     for index = 1, 9 do

@@ -17,7 +17,7 @@ What the fork adds:
 
 > [!CAUTION]
 > The fluid transfer rate of an OpenComputers Transposer depends on the Fluid Regulator it was crafted with in an Assembler.
-> Use transposers made with at least an LuV Fluid Regulator, or the program can't move fluids fast enough.
+> Use transposers made with at least an LuV Fluid Regulator. A weaker one moves less fluid per transfer than the program needs.
 >
 > ![Transposer](/docs/transposer.png)
 
@@ -70,7 +70,7 @@ BM       0/64.0k
 ## Installation
 
 > [!CAUTION]
-> On Java 8 the download from GitHub fails, because Java rejects GitHub's certificates.
+> On Java 8 the download from GitHub can fail, because Java rejects GitHub's certificates.
 > Then the only way to install the program is to copy its files to the computer by hand.
 
 To install program, you need a server with:
@@ -416,6 +416,7 @@ About 10 seconds before each cycle of the Water Purification Plant ends, it choo
 and turns every other unit off. A unit that is turned off still finishes the cycle it is running.
 
 Single threaded, each unit can get enough parallels to use all the power of the Water Purification Plant.
+Parallels are set in each unit's GUI. GregTech caps the water a unit makes at 2,147,483,647 L per cycle, so more than about 2.39 million parallels gain nothing.
 Catalysts (Polyaluminium Chloride, Ozone, plasma, Super Coolant, quark catalysts, Molten Infinity and so on) don't scale with parallels,
 so fewer cycles with more parallels use less of them. See [Singlethreaded Waterline](https://wiki.gtnewhorizons.com/wiki/Water_Line#Singlethreaded_Waterline) on the wiki.
 
@@ -433,7 +434,7 @@ In the single thread modes, every unit of the line needs its module, or the unit
 - `"multiThread"` - Every tier below its threshold runs.
 - `"singleThread"` - The lowest tier below its threshold runs. This is how the wiki's singlethreaded waterline works.
 - `"singleThreadBalancing"` - The tier with the least water (of those below their threshold) runs, a lower tier wins a tie.
-  A tier below `minQty` always runs first, so a higher tier never starts without enough input.
+  A tier below `minQty` always runs first, so a higher tier doesn't start without enough input.
   Set `minQty` to the most water one cycle uses: your highest parallel count × 1000.
   Keep every threshold above `minQty`: a tier at or above its threshold doesn't run, even when it has less than `minQty`.
 
@@ -441,7 +442,8 @@ T8 also runs when Stabilised Baryonic Matter is below its threshold. T8 makes it
 
 A unit that ran out of materials is shown as "Admin disabled", and the Quantity Controller doesn't enable it again.
 Once it's restocked, switch the unit back on by hand (soft mallet, or the button in its GUI): the program then uses it again.
-In the multi and single thread modes it turns the unit off again until it chooses that unit, so two units never start in the same cycle.
+In the multi and single thread modes the program switches it off again within a few seconds and keeps it off until it chooses that unit.
+Switched on in the last few seconds of a cycle, it can start once next to the unit the Quantity Controller chose.
 
 #### Quantity Controller Config part
 

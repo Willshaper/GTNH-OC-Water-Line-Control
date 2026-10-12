@@ -32,11 +32,12 @@ end
 ---Get current state
 ---@return string
 function t1controller:getCurrentState()
-  if self.controllerProxy.isWorkAllowed() == false then
-    return "Controller disabled"
-  end
-
+  -- A unit that may no longer work still finishes the cycle it is running
   if self.controllerProxy.hasWork() == false then
+    if self.controllerProxy.isWorkAllowed() == false then
+      return "Controller disabled"
+    end
+
     return "Wait cycle"
   end
 

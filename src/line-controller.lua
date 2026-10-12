@@ -4,8 +4,12 @@ local term = require("term")
 local classBuilder = require("lib.class-builder.index")
 local componentDiscover = require("lib.component-discover.index")
 
+---Ticks before the end of a cycle when "cycle_pre_end" is sent
+local preEndTicks = 80
+
 ---@class LineController
 ---@field lastWorkProgress integer
+---@field isPreEndSent boolean
 ---@field controllerProxy gt_machine
 local lineController = {}
 
@@ -13,6 +17,7 @@ local lineController = {}
 ---@return LineController
 function lineController:constructor()
   self.lastWorkProgress = 0
+  self.isPreEndSent = false
 
   return self
 end
@@ -27,10 +32,23 @@ end
 ---Loop
 function lineController:loop()
   local workProgress = self.controllerProxy.getWorkProgress()
+  local workMaxProgress = self.controllerProxy.getWorkMaxProgress()
 
   if self.lastWorkProgress > workProgress or (self.controllerProxy.hasWork() == false and self.lastWorkProgress ~= 0) then
+    -- The loop missed the last seconds of the cycle, so choose the units for the cycle after this one
+    if self.isPreEndSent == false then
+      event.push("cycle_pre_end", true)
+    end
+
     event.push("cycle_end")
     self.lastWorkProgress = 0
+    self.isPreEndSent = false
+  end
+
+  -- Units must be chosen before the cycle ends, because the next one starts in the same tick
+  if workMaxProgress ~= 0 and workProgress >= workMaxProgress - preEndTicks and self.isPreEndSent == false then
+    event.push("cycle_pre_end")
+    self.isPreEndSent = true
   end
 
   if self.controllerProxy.hasWork() == true then

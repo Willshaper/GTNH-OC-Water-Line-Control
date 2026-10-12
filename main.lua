@@ -16,7 +16,7 @@ local version = require("version")
 ---@type Config
 local config = configManager.manager:new(configTemplate):build(config)
 
-local repository = "Navatusein/GTNH-OC-Water-Line-Control"
+local repository = "Willshaper/GTNH-OC-Water-Line-Control"
 local archiveName = "WaterLineControl"
 
 local program = programController.program:new(config.enableAutoUpdate, version, repository, archiveName)
@@ -40,18 +40,18 @@ local mainTemplate = {
     logsScrollList = scrollList:new("logs", keyboard.keys.up, keyboard.keys.down)
   },
   lines = {
-    "Line State: $lineState$",
+    "Line State: $lineState$ | QC Mode: $qcMode$",
     "",
-    "T3: $t3state$",
-    "T4: $t4state$",
-    "T5: $t5state$",
-    "T6: $t6state$",
-    "T7: $t7state$",
-    "T8: $t8state$",
+    "T1$t1active$ $t1water$ $t1state$",
+    "T2$t2active$ $t2water$ $t2state$",
+    "T3$t3active$ $t3water$ $t3state$",
+    "T4$t4active$ $t4water$ $t4state$",
+    "T5$t5active$ $t5water$ $t5state$",
+    "T6$t6active$ $t6water$ $t6state$",
+    "T7$t7active$ $t7water$ $t7state$",
+    "T8$t8active$ $t8water$ $t8state$",
+    "BM  $bmWater$",
     "",
-    "#logsScrollList#",
-    "#logsScrollList#",
-    "#logsScrollList#",
     "#logsScrollList#",
     "#logsScrollList#",
     "#logsScrollList#",
@@ -64,7 +64,7 @@ local mainTemplate = {
 
 local controllersStates = {}
 
-for i = 3, 8, 1 do
+for i = 1, 8, 1 do
   local key = "t"..i
 
   if config.controllers[key] ~= nil then
@@ -81,20 +81,23 @@ local function init()
 
   lineController:init()
 
-  for i = 3, 8, 1 do
+  for i = 1, 8, 1 do
     local key = "t"..i
 
     if config.controllers[key] ~= nil then
       config.controllers[key]:init()
     end
   end
+
+  config.quantityController:init(config.controllers)
 end
 
 local function loop()
   while true do
+    config.quantityController:loop()
     lineController:loop()
 
-    for i = 3, 8, 1 do
+    for i = 1, 8, 1 do
       local key = "t"..i
 
       if config.controllers[key] ~= nil then
@@ -109,17 +112,60 @@ local function loop()
   end
 end
 
+---Format an amount of fluid in L, e.g. 20000000000 -> "20.0G"
+---@param value number
+---@return string
+local function formatAmount(value)
+  local units = {"", "k", "M", "G", "T", "P"}
+  local unitIndex = 1
+
+  -- 999950 shows as 1.0M, not 1000.0k
+  while value >= 999.95 and unitIndex < #units do
+    value = value / 1000
+    unitIndex = unitIndex + 1
+  end
+
+  if unitIndex == 1 then
+    return string.format("%.0f", value)
+  end
+
+  return string.format("%.1f%s", value, units[unitIndex])
+end
+
+---Format the stock and threshold of a fluid read by the Quantity Controller
+---@param index integer
+---@return string
+local function formatWater(index)
+  local quantityController = config.quantityController
+
+  if quantityController.controlMode == "disabled" then
+    return string.rep(" ", 13)
+  end
+
+  return string.format(
+    "%6s/%-6s",
+    formatAmount(quantityController.waterLevels[index]),
+    formatAmount(quantityController.waterThresholds[index])
+  )
+end
+
 local function guiLoop()
-  gui:render({
+  local values = {
     lineState = lineController:getCurrentState(),
-    t3state = controllersStates["t3"],
-    t4state = controllersStates["t4"],
-    t5state = controllersStates["t5"],
-    t6state = controllersStates["t6"],
-    t7state = controllersStates["t7"],
-    t8state = controllersStates["t8"],
+    qcMode = config.quantityController:getCurrentState(),
+    bmWater = formatWater(9),
     logs = config.logger.handlers["scrollList"]:getLogs()
-  })
+  }
+
+  for i = 1, 8, 1 do
+    local key = "t"..i
+
+    values[key.."active"] = config.quantityController.isTierActive[i] and "*" or " "
+    values[key.."water"] = formatWater(i)
+    values[key.."state"] = controllersStates[key]
+  end
+
+  gui:render(values)
 end
 
 local function onExit()

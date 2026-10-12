@@ -7,10 +7,12 @@ local componentDiscover = require("lib.component-discover.index")
 local stateMachineBuilder = require("lib.state-machine-builder.index")
 local gtSensorParser = require("lib.gt-sensor-parser.index")
 
+local baseController = require("src.base-controller")
+
 ---@class T6ControllerData
 ---@field currentLens? string
 
----@class T6Controller
+---@class T6Controller: BaseController
 ---@field stateMachine StateMachine<T6ControllerData>
 ---@field transposerAddress string
 ---@field controllerProxy gt_machine
@@ -52,6 +54,10 @@ end
 ---Get current state
 ---@return string
 function t6controller:getCurrentState()
+  if self.isAdminEnabled == false then
+    return "Admin disabled"
+  end
+
   if self.controllerProxy.isWorkAllowed() == false then
     return "Controller disabled"
   end
@@ -215,7 +221,7 @@ function t6controller:putLens(lens)
   )
 
   if result ~= 1 then
-    self.controllerProxy.setWorkAllowed(false)
+    self:adminDisable()
     self.stateMachine.data.currentLens = nil
     self.stateMachine:setState("waitEnd")
     event.push("log_warning", "[T6] Invalid slot: "..self.transposerItems[lens].slot.." for: "..lens)
@@ -231,4 +237,4 @@ function t6controller:putLens(lens)
   end
 end
 
-return classBuilder.createClass(t6controller, t6controller.constructor, "T6Controller")
+return classBuilder.createClass(t6controller, t6controller.constructor, "T6Controller", baseController)

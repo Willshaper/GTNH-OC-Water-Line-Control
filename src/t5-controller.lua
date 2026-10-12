@@ -7,10 +7,12 @@ local componentDiscover = require("lib.component-discover.index")
 local stateMachineBuilder = require("lib.state-machine-builder.index")
 local gtSensorParser = require("lib.gt-sensor-parser.index")
 
+local baseController = require("src.base-controller")
+
 ---@class T5ControllerData
 ---@field iterations integer
 
----@class T5Controller
+---@class T5Controller: BaseController
 ---@field stateMachine StateMachine<T5ControllerData>
 ---@field plasmaTransposerAddress string
 ---@field coolantTransposerAddress string
@@ -61,6 +63,10 @@ end
 ---Get current state
 ---@return string
 function t5controller:getCurrentState()
+  if self.isAdminEnabled == false then
+    return "Admin disabled"
+  end
+
   if self.controllerProxy.isWorkAllowed() == false then
     return "Controller disabled"
   end
@@ -212,7 +218,7 @@ function t5controller:putPlasma()
   )
 
   if result ~= self.plasmaCount then
-    self.controllerProxy.setWorkAllowed(false)
+    self:adminDisable()
     event.push("log_warning", "[T5] Not enough Helium Plasma for craft")
   end
 end
@@ -228,9 +234,9 @@ function t5controller:putCoolant()
   )
 
   if result ~= self.coolantCount then
-    self.controllerProxy.setWorkAllowed(false)
+    self:adminDisable()
     event.push("log_warning", "[T5] Not enough Super Coolant for craft")
   end
 end
 
-return classBuilder.createClass(t5controller, t5controller.constructor, "T5Controller")
+return classBuilder.createClass(t5controller, t5controller.constructor, "T5Controller", baseController)

@@ -7,7 +7,9 @@ local componentDiscover = require("lib.component-discover.index")
 local stateMachineBuilder = require("lib.state-machine-builder.index")
 local gtSensorParser = require("lib.gt-sensor-parser.index")
 
----@class T4Controller
+local baseController = require("src.base-controller")
+
+---@class T4Controller: BaseController
 ---@field stateMachine StateMachine
 ---@field hydrochloricAcidTransposerAddress string
 ---@field sodiumHydroxideTransposerAddress string
@@ -55,6 +57,10 @@ end
 ---Get current state
 ---@return string
 function t4controller:getCurrentState()
+  if self.isAdminEnabled == false then
+    return "Admin disabled"
+  end
+
   if self.controllerProxy.isWorkAllowed() == false then
     return "Controller disabled"
   end
@@ -201,7 +207,7 @@ function t4controller:putSodiumHydroxide(count)
     )
 
     if result ~= sodiumHydroxideCount then
-      self.controllerProxy.setWorkAllowed(false)
+      self:adminDisable()
       event.push("log_warning", "[T4] Not enough Sodium Hydroxide for craft")
       break
     end
@@ -222,11 +228,11 @@ function t4controller:putHydrochloricAcid(count)
   )
 
   if result ~= hydrochloricAcidCount then
-    self.controllerProxy.setWorkAllowed(false)
+    self:adminDisable()
     event.push("log_warning", "[T4] Not enough Hydrochloric Acid for craft")
   end
 
   self.gtSensorParser = gtSensorParser.parser:new(self.controllerProxy)
 end
 
-return classBuilder.createClass(t4controller, t4controller.constructor, "T4Controller")
+return classBuilder.createClass(t4controller, t4controller.constructor, "T4Controller", baseController)

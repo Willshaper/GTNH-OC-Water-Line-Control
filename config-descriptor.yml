@@ -1,14 +1,12 @@
 descriptor:
-  name: Water Line Control for 2.9+
-  key: water-line-control-2.9
+  name: Water Line Control for 2.9+ (singlethread fork)
+  key: water-line-control-2.9-singlethread
   currentVersion: 2.9+
-  description: Program for the automation of Grate water production from t3 to t8
-  repositoryLink: https://github.com/Navatusein/GTNH-OC-Water-Line-Control
+  description: Program for the automation of Grate water production from t1 to t8, with singlethread quantity control
+  repositoryLink: https://github.com/Willshaper/GTNH-OC-Water-Line-Control
   versions:
-    - name: 2.8
-      url: "https://raw.githubusercontent.com/Navatusein/GTNH-OC-Water-Line-Control/refs/heads/main/config-descriptor.yml"
     - name: 2.9+
-      url: "https://raw.githubusercontent.com/Navatusein/GTNH-OC-Water-Line-Control/refs/heads/develop/config-descriptor.yml"
+      url: "https://raw.githubusercontent.com/Willshaper/GTNH-OC-Water-Line-Control/refs/heads/develop/config-descriptor.yml"
   fieldGroups:
     - key: general
       name: General
@@ -44,6 +42,30 @@ descriptor:
           optional: true
           label: Discord Webhook Url
           description: Discord Webhook Url for notifications
+
+    - key: t1
+      name: T1 Water
+      defaultOpen: true
+      fields:
+        - key: t1Enable
+          type: boolean
+          optional: true
+          default: false
+          class: switch
+          label: Enable T1 Module
+          description: Enable module for T1 water
+
+    - key: t2
+      name: T2 Water
+      defaultOpen: true
+      fields:
+        - key: t2Enable
+          type: boolean
+          optional: true
+          default: false
+          class: switch
+          label: Enable T2 Module
+          description: Enable module for T2 water
 
     - key: t3
       name: T3 Water
@@ -208,6 +230,102 @@ descriptor:
           label: Sub ME Interface Address
           description: Address of me interface which connected to sub AE
 
+    - key: quantityController
+      name: Quantity Controller
+      defaultOpen: true
+      fields:
+        - key: qcControlMode
+          type: select
+          default: disabled
+          label: Control Mode
+          description: Which units run, from the amount of each water in the ME network
+          options:
+            - label: Disabled (every enabled unit runs)
+              value: disabled
+            - label: Multi thread (every tier below its threshold runs)
+              value: multiThread
+            - label: Single thread (lowest tier below its threshold runs)
+              value: singleThread
+            - label: Single thread balancing (tier with the least water runs)
+              value: singleThreadBalancing
+
+        - key: qcMeInterfaceAddress
+          type: address
+          default: ""
+          optional: true
+          label: ME Interface Address
+          description: Address of me interface on the network which stores the water
+
+        - key: qcMinQty
+          type: integer
+          default: 32000
+          min: 0
+          label: Min Quantity
+          description: Tiers with less water than this run first (single thread balancing). Set it to the most water one cycle uses, max parallels * 1000, and keep every threshold above it
+
+        - key: qcThresholdT1
+          type: integer
+          default: 64000
+          min: 0
+          label: T1 Threshold
+          description: Amount of T1 water to keep stocked, in L
+
+        - key: qcThresholdT2
+          type: integer
+          default: 64000
+          min: 0
+          label: T2 Threshold
+          description: Amount of T2 water to keep stocked, in L
+
+        - key: qcThresholdT3
+          type: integer
+          default: 64000
+          min: 0
+          label: T3 Threshold
+          description: Amount of T3 water to keep stocked, in L
+
+        - key: qcThresholdT4
+          type: integer
+          default: 64000
+          min: 0
+          label: T4 Threshold
+          description: Amount of T4 water to keep stocked, in L
+
+        - key: qcThresholdT5
+          type: integer
+          default: 64000
+          min: 0
+          label: T5 Threshold
+          description: Amount of T5 water to keep stocked, in L
+
+        - key: qcThresholdT6
+          type: integer
+          default: 64000
+          min: 0
+          label: T6 Threshold
+          description: Amount of T6 water to keep stocked, in L
+
+        - key: qcThresholdT7
+          type: integer
+          default: 64000
+          min: 0
+          label: T7 Threshold
+          description: Amount of T7 water to keep stocked, in L
+
+        - key: qcThresholdT8
+          type: integer
+          default: 64000
+          min: 0
+          label: T8 Threshold
+          description: Amount of T8 water to keep stocked, in L
+
+        - key: qcThresholdBaryonicMatter
+          type: integer
+          default: 64000
+          min: 0
+          label: Stabilised Baryonic Matter Threshold
+          description: Amount of Stabilised Baryonic Matter to keep stocked, in L. T8 makes it, and it is needed to realign quark catalysts
+
   configTemplate: |
     local config = {
       enableAutoUpdate = <field>autoUpdate</field>, -- Enable auto update on start
@@ -237,6 +355,14 @@ descriptor:
       },
 
       controllers = {
+        t1 = { -- Controller for T1 Filtered Water (Grade 1)
+          enable = <field>t1Enable</field> -- Enable module for T1 water
+        },
+
+        t2 = { -- Controller for T2 Ozonated Water (Grade 2)
+          enable = <field>t2Enable</field> -- Enable module for T2 water
+        },
+
         t3 = { -- Controller for T3 Flocculated Water (Grade 3)
           enable = <field>t3Enable</field>, -- Enable module for T3 water
           transposerAddress = "<field>t3TransposerAddress</field>" -- Address of transposer which provide Polyaluminium Chloride
@@ -272,6 +398,23 @@ descriptor:
           maxQuarkCount = <field>t8MaxQuarkCount</field>, -- Maximum number of each quark in the sub AE
           transposerAddress = "<field>t8TransposerAddress</field>", -- Address of transposer which provide Quarks
           subMeInterfaceAddress = "<field>t8SubMeInterfaceAddress</field>" -- Address of me interface which connected to sub AE
+        }
+      },
+
+      quantityController = { -- Decides which units run, from the amount of each water in the ME network
+        controlMode = "<field>qcControlMode</field>", -- "disabled", "multiThread", "singleThread" or "singleThreadBalancing"
+        meInterfaceAddress = "<field>qcMeInterfaceAddress</field>", -- Address of me interface on the network which stores the water
+        minQty = <field>qcMinQty</field>, -- Tiers with less water than this run first (singleThreadBalancing). Set it to the most water one cycle uses: max parallels * 1000, and keep every threshold above it
+        waterThresholds = { -- Amount to keep stocked, in L
+          t1 = <field>qcThresholdT1</field>,
+          t2 = <field>qcThresholdT2</field>,
+          t3 = <field>qcThresholdT3</field>,
+          t4 = <field>qcThresholdT4</field>,
+          t5 = <field>qcThresholdT5</field>,
+          t6 = <field>qcThresholdT6</field>,
+          t7 = <field>qcThresholdT7</field>,
+          t8 = <field>qcThresholdT8</field>,
+          stabilisedBaryonicMatter = <field>qcThresholdBaryonicMatter</field> -- Made by T8, needed to realign quark catalysts
         }
       }
     }

@@ -1,12 +1,20 @@
-# GTNH-OC-Water-Line-Control
+# GTNH-OC-Water-Line-Control (singlethread fork)
+
+This is a fork of the `develop` branch of [Navatusein/GTNH-OC-Water-Line-Control](https://github.com/Navatusein/GTNH-OC-Water-Line-Control/tree/develop).
+It adds the **Quantity Controller** from [ehami/gtnh-oc-water-line-control](https://github.com/ehami/gtnh-oc-water-line-control),
+which can run the water line single threaded: one Purification Unit per cycle, chosen by how much of each water is in your ME network.
+
+What the fork adds:
+- The [Quantity Controller](#quantity-controller) with four modes: `disabled`, `multiThread`, `singleThread` and `singleThreadBalancing`.
+- T1 and T2 modules, so the Clarifier and the Ozonation unit can be switched on and off too.
+- Units that stop because they ran out of materials stay off ("Admin disabled") until the program restarts, so the Quantity Controller never turns them back on.
+- The screen shows each water's stock and threshold, and marks the units the Quantity Controller enabled with `*`.
+- Auto update and the installer use this fork's releases.
 
 > [!CAUTION]
 > This version of the program is in beta testing.
 > It requires GTNH **2.9** or newer and will **not** work on 2.8 and older versions.
-> It uses a new configuration format that is **not compatible** with the config of the first version,
-> so the old `config.lua` will not work and the configuration must be created from scratch.
-> The auto update will also **not** update you to this version.
-> To install it, run the installer and select the required version manually.
+> Its `config.lua` has new settings (`t1`, `t2` and `quantityController`), so a config from the original program will not work.
 
 > [!CAUTION]
 > Included in GTNH Version 2.8 and above, OpenComputers Transposers fluid transfer rates are upgradable beyond the base value when crafted with an appropriate Fluid Regulator in an Assembler.
@@ -19,14 +27,16 @@
 - [Information](#information)
 - [Installation](#installation)
 - [Water Line Setup](#water-line-setup)
+- [Quantity Controller](#quantity-controller)
 - [Configuration](#configuration)
 
 <a id="information"></a>
 
 ## Information
 
-Program is designed to automate the water line from T3 to T8 water. 
+Program is designed to automate the water line from T3 to T8 water, and can switch T1 and T2 on and off.
 Program is modular, you can choose which water types you want to automate.
+The Quantity Controller can also decide which units run, from the amount of each water in your ME network.
 It is also possible to send messages to Discord about out of service situations.
 And there is also the possibility of auto update at startup.
 
@@ -41,6 +51,19 @@ And there is also the possibility of auto update at startup.
 #### Interface
 
 ![Interface](/docs/interface.png)
+
+The screenshot is of the original program. This fork adds the stock and threshold of each water and a `*` for the units the Quantity Controller enabled:
+
+```
+Line State: 120/120 | QC Mode: singleThreadBalancing
+
+T1    4.3M/3.0M   Controller disabled
+T2    3.7M/3.0M   Controller disabled
+T3*   2.7M/3.0M   State: [Wait End] Success: [100%]
+T4       0/64.0k  Unused
+...
+BM       0/64.0k
+```
 
 <a id="installation"></a>
 
@@ -63,19 +86,14 @@ To install program, you need a server with:
 ![Computer setup](/docs/server.png)
 
 Install the basic Open OS on your computer.
-Then run the command to start the installer.
+Then run this command to install the fork. It downloads the latest release into `/home`.
+An existing `config.lua` is kept as `config.old.lua` (or `config.old2.lua` and so on, if that exists).
 
 ```shell
-pastebin run ESUAMAGx
-``` 
+wget -f https://raw.githubusercontent.com/Willshaper/GTNH-OC-Water-Line-Control/develop/setup.lua && setup
+```
 
-Or
-
-```shell
-wget -f https://raw.githubusercontent.com/Navatusein/GTNH-OC-Installer/main/installer.lua && installer
-``` 
-
-Then select the Water Line Control program in the installer.
+The installer of the original program (`pastebin run ESUAMAGx`) installs the original, without the Quantity Controller.
 If you wish you can add the program to auto download, for manual start write a command.
 
 ```shell
@@ -84,7 +102,7 @@ main
 
 > [!NOTE]  
 > For convenient configuration you can use the web configurator.
-> [GTNH-OC-Web-Configurator](https://navatusein.github.io/GTNH-OC-Web-Configurator/#/configurator?url=https%3A%2F%2Fraw.githubusercontent.com%2FNavatusein%2FGTNH-OC-Water-Line-Control%2Frefs%2Fheads%2Fdevelop%2Fconfig-descriptor.yml)
+> [GTNH-OC-Web-Configurator](https://navatusein.github.io/GTNH-OC-Web-Configurator/#/configurator?url=https%3A%2F%2Fraw.githubusercontent.com%2FWillshaper%2FGTNH-OC-Water-Line-Control%2Frefs%2Fheads%2Fdevelop%2Fconfig-descriptor.yml)
 
 #### Computer setup
 
@@ -128,6 +146,39 @@ The controller is connected via MFU to keep it accessible.
 #### Example setup
 
 ![Water Purification Plant](/docs/water-purification-plant.png)
+
+<a id="t1-t2"></a>
+
+### [T1] Filtered Water (Grade 1) and [T2] Ozonated Water (Grade 2)
+
+#### Components
+
+To build a setup, you will need for each of them:
+- Adapter: 1
+- MFU: 1
+
+#### Description
+
+These modules only switch the unit on and off, so the Quantity Controller can choose them.
+They don't supply anything: keep the Clarifier stocked with Activated Carbon Filter Mesh and the Ozonation unit with Ozone yourself.
+Enable them with `enable = true` in the `config.lua`. You only need them when you use the Quantity Controller.
+
+The controllers are connected via MFU, like the Water Purification Plant.
+
+> [!CAUTION]
+> The Ozonation unit explodes if its input hatch holds more than 1,024,000 L of Ozone.
+
+#### T1 and T2 Config part
+
+```Lua
+t1 = { -- Controller for T1 Filtered Water (Grade 1)
+  enable = false -- Enable module for T1 water
+},
+
+t2 = { -- Controller for T2 Ozonated Water (Grade 2)
+  enable = false -- Enable module for T2 water
+},
+```
 
 ### [T3] Flocculated Water (Grade 3)
 
@@ -359,16 +410,76 @@ t8 = { -- Controller for T8 Subatomically Perfect Water (Grade 8)
 
 ![T8 Setup 2](/docs/t8-setup-2.png)
 
+<a id="quantity-controller"></a>
+
+## Quantity Controller
+
+The Quantity Controller reads how much of each water, and of Stabilised Baryonic Matter, is in your ME network.
+About 4 seconds before each cycle of the Water Purification Plant ends, it chooses which units may start in the next cycle,
+and turns every other unit off. A unit that is turned off still finishes the cycle it is running.
+
+Single threaded, each unit can get enough parallels to use all the power of the Water Purification Plant.
+Catalysts (Polyaluminium Chloride, Ozone, plasma, Super Coolant, quark catalysts, Molten Infinity and so on) don't scale with parallels,
+so fewer cycles with more parallels use less of them. See [Singlethreaded Waterline](https://wiki.gtnewhorizons.com/wiki/Water_Line#Singlethreaded_Waterline) on the wiki.
+
+#### Components
+
+- Adapter: 1, next to an ME Interface on the network which stores the water
+- Adapters with MFUs for the T1 and T2 controllers, see [T1 and T2](#t1-t2)
+
+Only units with an enabled module (`enable = true`) are controlled.
+In the single thread modes, every unit of the line needs its module, or the units without one keep running on their own.
+
+#### Modes
+
+- `"disabled"` - No quantity control. Every enabled unit runs every cycle, like the original program.
+- `"multiThread"` - Every tier below its threshold runs.
+- `"singleThread"` - The lowest tier below its threshold runs. This is how the wiki's singlethreaded waterline works.
+- `"singleThreadBalancing"` - The tier with the least water (of those below their threshold) runs, a lower tier wins a tie.
+  A tier below `minQty` always runs first, so a higher tier never starts without enough input.
+  Set `minQty` to the most water one cycle uses: your highest parallel count × 1000.
+  Keep every threshold above `minQty`: a tier at or above its threshold doesn't run, even when it has less than `minQty`.
+
+T8 also runs when Stabilised Baryonic Matter is below its threshold. T8 makes it, and it's needed to realign quark catalysts.
+
+A unit that ran out of materials is shown as "Admin disabled" and is never enabled again until you restart the program.
+
+#### Quantity Controller Config part
+
+```Lua
+quantityController = { -- Decides which units run, from the amount of each water in the ME network
+  controlMode = "disabled", -- "disabled", "multiThread", "singleThread" or "singleThreadBalancing"
+  meInterfaceAddress = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", -- Address of me interface on the network which stores the water
+  minQty = 32000, -- Tiers with less water than this run first (singleThreadBalancing). Set it to the most water one cycle uses: max parallels * 1000, and keep every threshold above it
+  waterThresholds = { -- Amount to keep stocked, in L
+    t1 = 64000,
+    t2 = 64000,
+    t3 = 64000,
+    t4 = 64000,
+    t5 = 64000,
+    t6 = 64000,
+    t7 = 64000,
+    t8 = 64000,
+    stabilisedBaryonicMatter = 64000 -- Made by T8, needed to realign quark catalysts
+  }
+}
+```
+
+> [!NOTE]
+> A unit's output only reaches the ME network when its cycle ends, after the next cycle is already chosen.
+> So the tier that just ran is often chosen once more before the new water counts.
+
 <a id="configuration"></a>
 
 ## Configuration
 
 > [!NOTE]  
 > For convenient configuration you can use the web configurator.
-> [GTNH-OC-Web-Configurator](https://navatusein.github.io/GTNH-OC-Web-Configurator/#/configurator?url=https%3A%2F%2Fraw.githubusercontent.com%2FNavatusein%2FGTNH-OC-Water-Line-Control%2Frefs%2Fheads%2Fdevelop%2Fconfig-descriptor.yml)
+> [GTNH-OC-Web-Configurator](https://navatusein.github.io/GTNH-OC-Web-Configurator/#/configurator?url=https%3A%2F%2Fraw.githubusercontent.com%2FWillshaper%2FGTNH-OC-Water-Line-Control%2Frefs%2Fheads%2Fdevelop%2Fconfig-descriptor.yml)
 
 General configuration in file `config.lua`
-The configuration of water line modules is described in paragraph [Water Line Setup](#water-line-setup).
+The configuration of water line modules is described in paragraph [Water Line Setup](#water-line-setup),
+and the `quantityController` settings in [Quantity Controller](#quantity-controller).
 
 Enable auto update when starting the program.
 
@@ -406,3 +517,8 @@ logger = {
   }
 },
 ```
+
+## Credits
+
+- [Navatusein](https://github.com/Navatusein) wrote Water Line Control.
+- [ehami](https://github.com/ehami) wrote the Quantity Controller, the T1 and T2 modules and the Admin disabled state, ported here to the 2.9 version.

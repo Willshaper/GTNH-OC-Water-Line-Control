@@ -7,10 +7,12 @@ local componentDiscover = require("lib.component-discover.index")
 local stateMachineBuilder = require("lib.state-machine-builder.index")
 local gtSensorParser = require("lib.gt-sensor-parser.index")
 
+local baseController = require("src.base-controller")
+
 ---@class T8ControllerData
 ---@field lastPut? integer
 
----@class T8Controller
+---@class T8Controller: BaseController
 ---@field stateMachine StateMachine<T8ControllerData>
 ---@field maxQuarkCount integer
 ---@field transposerAddress string
@@ -87,6 +89,10 @@ end
 ---Get current state
 ---@return string
 function t8controller:getCurrentState()
+  if self.isAdminEnabled == false then
+    return "Admin disabled"
+  end
+
   if self.controllerProxy.isWorkAllowed() == false then
     return "Controller disabled"
   end
@@ -238,7 +244,7 @@ function t8controller:putQuarks(index)
     )
 
     if transfered == 0 then
-      self.controllerProxy.setWorkAllowed(false)
+      self:adminDisable()
       event.push("log_warning", "[T8] Not enough quarks on slot: "..self.drops[index][i])
     end
   end
@@ -255,7 +261,7 @@ function t8controller:craftQuarks()
 
       if crafts[1] == nil then
         event.push("log_warning", "[T8] No craft for: "..quark.label)
-        self.controllerProxy.setWorkAllowed(false)
+        self:adminDisable()
         break
       end
 
@@ -264,4 +270,4 @@ function t8controller:craftQuarks()
   end
 end
 
-return classBuilder.createClass(t8controller, t8controller.constructor, "T8Controller")
+return classBuilder.createClass(t8controller, t8controller.constructor, "T8Controller", baseController)

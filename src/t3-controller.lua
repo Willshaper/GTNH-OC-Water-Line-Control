@@ -7,7 +7,9 @@ local componentDiscover = require("lib.component-discover.index")
 local stateMachineBuilder = require("lib.state-machine-builder.index")
 local gtSensorParser = require("lib.gt-sensor-parser.index")
 
----@class T3Controller
+local baseController = require("src.base-controller")
+
+---@class T3Controller: BaseController
 ---@field stateMachine StateMachine
 ---@field transposerAddress string
 ---@field requiredCount integer
@@ -52,6 +54,10 @@ end
 ---Get current state
 ---@return string
 function t3controller:getCurrentState()
+  if self.isAdminEnabled == false then
+    return "Admin disabled"
+  end
+
   if self.controllerProxy.isWorkAllowed() == false then
     return "Controller disabled"
   end
@@ -112,7 +118,7 @@ function t3controller:initStateMachine()
       local countToAdd = self.requiredCount
 
       if fluidInTank.amount < self.requiredCount then
-        self.controllerProxy.setWorkAllowed(false)
+        self:adminDisable()
         event.push("log_warning", "[T3] Not enough Polyaluminium Chloride for craft")
 
         countToAdd = fluidInTank.amount - (fluidInTank.amount % 100000)
@@ -160,4 +166,4 @@ function t3controller:findTransposerFluid(proxy, fluidNames)
   end
 end
 
-return classBuilder.createClass(t3controller, t3controller.constructor, "T3Controller")
+return classBuilder.createClass(t3controller, t3controller.constructor, "T3Controller", baseController)

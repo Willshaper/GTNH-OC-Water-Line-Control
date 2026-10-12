@@ -7,6 +7,8 @@ local componentDiscover = require("lib.component-discover.index")
 local stateMachineBuilder = require("lib.state-machine-builder.index")
 local gtSensorParser = require("lib.gt-sensor-parser.index")
 
+local baseController = require("src.base-controller")
+
 ---Parse bit string to bits array
 ---@param bitString string
 ---@return boolean[]
@@ -23,7 +25,7 @@ local function bitParser(bitString)
   return bits
 end
 
----@class T7Controller
+---@class T7Controller: BaseController
 ---@field stateMachine StateMachine
 ---@field inertGasTransposerAddress string
 ---@field superConductorTransposerAddress string
@@ -89,6 +91,10 @@ end
 ---Get current state
 ---@return string
 function t7controller:getCurrentState()
+  if self.isAdminEnabled == false then
+    return "Admin disabled"
+  end
+
   if self.controllerProxy.isWorkAllowed() == false then
     return "Controller disabled"
   end
@@ -255,7 +261,7 @@ function t7controller:putInertGas(bits)
   )
 
   if result ~= count then
-    self.controllerProxy.setWorkAllowed(false)
+    self:adminDisable()
     event.push("log_warning", "[T7] Not enough "..inertGas.." for craft")
   end
 end
@@ -271,7 +277,7 @@ function t7controller:putSuperConductor()
   )
 
   if result ~= self.superconductorCount then
-    self.controllerProxy.setWorkAllowed(false)
+    self:adminDisable()
     event.push("log_warning", "[T7] Not enough superconductor for craft")
   end
 end
@@ -287,7 +293,7 @@ function t7controller:putNeutronium()
   )
 
   if result ~= self.neutroniumCount then
-    self.controllerProxy.setWorkAllowed(false)
+    self:adminDisable()
     event.push("log_warning", "[T7] Not enough neutronium for craft")
   end
 end
@@ -303,9 +309,9 @@ function t7controller:putCoolant()
   )
 
   if result ~= self.supercoolantCount then
-    self.controllerProxy.setWorkAllowed(false)
+    self:adminDisable()
     event.push("log_warning", "[T7] Not enough coolant for craft")
   end
 end
 
-return classBuilder.createClass(t7controller, t7controller.constructor, "T7Controller")
+return classBuilder.createClass(t7controller, t7controller.constructor, "T7Controller", baseController)

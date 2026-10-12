@@ -26,6 +26,14 @@ local config = {
   },
 
   controllers = {
+    t1 = { -- Controller for T1 Filtered Water (Grade 1)
+      enable = false -- Enable module for T1 water
+    },
+
+    t2 = { -- Controller for T2 Ozonated Water (Grade 2)
+      enable = false -- Enable module for T2 water
+    },
+
     t3 = { -- Controller for T3 Flocculated Water (Grade 3)
       enable = false, -- Enable module for T3 water
       transposerAddress = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" -- Address of transposer which provide Polyaluminium Chloride
@@ -61,6 +69,23 @@ local config = {
       maxQuarkCount = 4, -- Maximum number of each quark in the sub AE
       transposerAddress = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", -- Address of transposer which provide Quarks
       subMeInterfaceAddress = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" -- Address of me interface which connected to sub AE
+    }
+  },
+
+  quantityController = { -- Decides which units run, from the amount of each water in the ME network
+    controlMode = "disabled", -- "disabled", "multiThread", "singleThread" or "singleThreadBalancing"
+    meInterfaceAddress = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", -- Address of me interface on the network which stores the water
+    minQty = 32000, -- Tiers with less water than this run first (singleThreadBalancing). Set it to the most water one cycle uses: max parallels * 1000, and keep every threshold above it
+    waterThresholds = { -- Amount to keep stocked, in L
+      t1 = 64000,
+      t2 = 64000,
+      t3 = 64000,
+      t4 = 64000,
+      t5 = 64000,
+      t6 = 64000,
+      t7 = 64000,
+      t8 = 64000,
+      stabilisedBaryonicMatter = 64000 -- Made by T8, needed to realign quark catalysts
     }
   }
 }

@@ -20,6 +20,14 @@ descriptor:
           label: Enable Auto Update
           description: Enable program automatic update
 
+        - key: autoStart
+          type: boolean
+          optional: true
+          default: true
+          class: checkbox
+          label: Enable Auto Start
+          description: Switch the Water Purification Plant on when the program starts. Stopping the program switches it off
+
     - key: logger
       name: Logger
       defaultOpen: true
@@ -329,6 +337,7 @@ descriptor:
   configTemplate: |
     local config = {
       enableAutoUpdate = <field>autoUpdate</field>, -- Enable auto update on start
+      enableAutoStart = <field>autoStart</field>, -- Switch the Water Purification Plant on when the program starts. Stopping the program switches it off
 
       logger = {
         name = "<field>name</field>",

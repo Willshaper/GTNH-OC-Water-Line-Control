@@ -9,6 +9,7 @@ What the fork adds:
 - T1 and T2 modules, so the Clarifier and the Ozonation unit can be switched on and off too.
 - Units that stop because they ran out of materials stay off ("Admin disabled"), so the Quantity Controller never turns them back on. Switch one back on by hand once it's restocked.
 - The screen shows each water's stock and threshold, and marks the units the Quantity Controller enabled with `*`.
+- The program switches the Water Purification Plant back on when it starts (`enableAutoStart`), so stopping it to edit `config.lua` no longer leaves the plant off.
 - Auto update and the installer use this fork's releases.
 
 > [!CAUTION]
@@ -486,6 +487,15 @@ Enable auto update when starting the program.
 
 ```lua
 enableAutoUpdate = true, -- Enable auto update on start
+```
+
+The program switches the Water Purification Plant off whenever it stops, for example when you stop it to edit `config.lua` or when it crashes.
+The plant still finishes the cycle it is running, but doesn't start a new one.
+With `enableAutoStart` the program switches the plant back on when it starts. Set it to `false` to switch the plant on by hand.
+A `config.lua` without this line counts as `true`.
+
+```lua
+enableAutoStart = true, -- Switch the Water Purification Plant on when the program starts. Stopping the program switches it off
 ```
 
 In the `timeZone` field you can specify your time zone.

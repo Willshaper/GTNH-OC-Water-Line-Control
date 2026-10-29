@@ -90,6 +90,11 @@ local function init()
   end
 
   config.quantityController:init(config.controllers)
+
+  -- Stopping the program switches the plant off. The units are chosen above, so the first new cycle uses the right ones
+  if config.enableAutoStart ~= false then
+    lineController:enable()
+  end
 end
 
 local function loop()

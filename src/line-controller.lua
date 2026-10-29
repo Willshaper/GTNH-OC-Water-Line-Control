@@ -70,6 +70,14 @@ function lineController:getCurrentState()
   return "Disable"
 end
 
+---Enable line controller, if it is switched off
+function lineController:enable()
+  if self.controllerProxy ~= nil and self.controllerProxy.isWorkAllowed() == false then
+    self.controllerProxy.setWorkAllowed(true)
+    event.push("log_info", "[Line] Water Purification Plant switched on")
+  end
+end
+
 ---Disable line controller
 function lineController:disable()
   if self.controllerProxy ~= nil then

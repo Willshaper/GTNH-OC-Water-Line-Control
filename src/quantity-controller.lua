@@ -4,6 +4,8 @@ local term = require("term")
 local classBuilder = require("lib.class-builder.index")
 local componentDiscover = require("lib.component-discover.index")
 
+local formatAmount = require("src.format-amount")
+
 ---Fluids read from the ME network. Index 9 (Stabilised Baryonic Matter) is made by T8
 local fluidNames = {
   "grade1purifiedwater",
@@ -24,6 +26,13 @@ local function tierOf(index)
   return math.min(index, 8)
 end
 
+---Get the short name of the fluid at an index of fluidNames, for the log
+---@param index integer
+---@return string
+local function fluidLabel(index)
+  return index == 9 and "BM" or "G"..index
+end
+
 ---@alias QuantityControlMode "disabled"|"multiThread"|"singleThread"|"singleThreadBalancing"
 
 ---@class QuantityController
@@ -35,6 +44,8 @@ end
 ---@field meInterfaceProxy me_interface
 ---@field waterLevels number[]
 ---@field isTierActive boolean[]
+---@field lastDecision string|nil
+---@field isAdminDisableLogged boolean[]
 local quantityController = {}
 
 ---Constructor
@@ -51,6 +62,8 @@ function quantityController:constructor(controlMode, meInterfaceAddress, minQty,
 
   self.waterLevels = {0, 0, 0, 0, 0, 0, 0, 0, 0}
   self.isTierActive = {false, false, false, false, false, false, false, false}
+  self.lastDecision = nil
+  self.isAdminDisableLogged = {}
 
   return self
 end
@@ -84,7 +97,7 @@ end
 
 ---Loop
 function quantityController:loop()
-  self:checkAdminResets()
+  self:checkAdminStates()
 
   if self.controlMode == "disabled" then
     return
@@ -93,19 +106,23 @@ function quantityController:loop()
   self:updateWaterLevels()
 end
 
----Let units that were enabled by hand after a fault be used again
+---Log units that were admin disabled after a fault, and let units that were enabled by hand be used again
 ---@private
-function quantityController:checkAdminResets()
+function quantityController:checkAdminStates()
   for tier = 1, 8 do
     local controller = self.controllers["t"..tier]
 
     if controller ~= nil and controller:checkAdminReset() then
       event.push("log_info", "[T"..tier.."] Enabled by hand, no longer admin disabled")
+      self.isAdminDisableLogged[tier] = false
 
       -- The Quantity Controller decides when it runs again, so it doesn't start next to the unit it chose
       if self.controlMode ~= "disabled" then
         controller:setEnabled(self.isTierActive[tier])
       end
+    elseif controller ~= nil and controller.isAdminEnabled == false and self.isAdminDisableLogged[tier] ~= true then
+      event.push("log_warning", "[T"..tier.."] Admin disabled until switched on by hand")
+      self.isAdminDisableLogged[tier] = true
     end
   end
 end
@@ -141,6 +158,7 @@ function quantityController:updateControllerEnablement()
   end
 
   local isTierActive = {false, false, false, false, false, false, false, false}
+  local reason = nil
 
   if self.controlMode == "multiThread" then
     -- Every tier below its threshold runs
@@ -154,6 +172,7 @@ function quantityController:updateControllerEnablement()
     for index = 1, 9 do
       if self:isTierUsable(tierOf(index)) and self:isBelowThreshold(index) then
         isTierActive[tierOf(index)] = true
+        reason = self:describeLevel(index, "under "..formatAmount(self.waterThresholds[index]))
         break
       end
     end
@@ -161,10 +180,12 @@ function quantityController:updateControllerEnablement()
     -- The tier with the least water (below its threshold) runs, lower tiers win ties.
     -- A tier below minQty runs first, so higher tiers don't start without enough input
     local winner = nil
+    local candidateCount = 0
 
     for index = 1, 9 do
       if self:isTierUsable(tierOf(index)) and self:isBelowThreshold(index) then
         local isBelowMinQty = self.waterLevels[index] < self.minQty
+        candidateCount = candidateCount + 1
 
         if winner == nil or self.waterLevels[index] < self.waterLevels[winner] or isBelowMinQty then
           winner = index
@@ -178,10 +199,19 @@ function quantityController:updateControllerEnablement()
 
     if winner ~= nil then
       isTierActive[tierOf(winner)] = true
+
+      if self.waterLevels[winner] < self.minQty then
+        reason = self:describeLevel(winner, "under min "..formatAmount(self.minQty))
+      elseif candidateCount > 1 then
+        reason = self:describeLevel(winner, "lowest stock")
+      else
+        reason = self:describeLevel(winner, "under "..formatAmount(self.waterThresholds[winner]))
+      end
     end
   end
 
   self.isTierActive = isTierActive
+  self:logDecision(isTierActive, reason)
 
   -- Disable every unit before enabling any, so two units never start in the same cycle
   for tier = 1, 8 do
@@ -195,6 +225,60 @@ function quantityController:updateControllerEnablement()
       self.controllers["t"..tier]:setEnabled(true)
     end
   end
+end
+
+---Describe the stock of the fluid at an index of fluidNames, e.g. "G2 7.3M, lowest stock"
+---@param index integer
+---@param why string
+---@return string
+---@private
+function quantityController:describeLevel(index, why)
+  return fluidLabel(index).." "..formatAmount(self.waterLevels[index])..", "..why
+end
+
+---Log the units chosen for the next cycle, when they differ from the last choice
+---@param isTierActive boolean[]
+---@param reason string|nil
+---@private
+function quantityController:logDecision(isTierActive, reason)
+  local tiers = {}
+
+  for tier = 1, 8 do
+    if isTierActive[tier] then
+      table.insert(tiers, "T"..tier)
+    end
+  end
+
+  local decision = table.concat(tiers, " ")
+
+  if decision == self.lastDecision then
+    return
+  end
+
+  self.lastDecision = decision
+
+  if decision == "" then
+    event.push("log_info", "[QC] Next cycle: none, "..(self:isNeedBlocked() and "needed units admin disabled" or "all units at threshold"))
+  elseif reason ~= nil then
+    event.push("log_info", "[QC] Next cycle: "..decision.." ("..reason..")")
+  else
+    event.push("log_info", "[QC] Next cycle: "..decision)
+  end
+end
+
+---Check if a fluid is below its threshold, but the unit which makes it is admin disabled
+---@return boolean
+---@private
+function quantityController:isNeedBlocked()
+  for index = 1, 9 do
+    local controller = self.controllers["t"..tierOf(index)]
+
+    if controller ~= nil and controller.isAdminEnabled == false and self:isBelowThreshold(index) then
+      return true
+    end
+  end
+
+  return false
 end
 
 ---Read the amount of each water grade and Stabilised Baryonic Matter in the ME network

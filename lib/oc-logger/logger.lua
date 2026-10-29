@@ -80,7 +80,7 @@ function logger:log(logLevel, ...)
   for _, handler in pairs(self.handlers) do
     if logLevels[logLevel] >= logLevels[handler.logLevel] then
       local formatted = self:formatMessage(handler.messageFormat, logLevel, message)
-      handler:log(self, logLevel, formatted)
+      handler:log(self, logLevel, formatted, message)
     end
   end
 end

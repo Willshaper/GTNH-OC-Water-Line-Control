@@ -106,9 +106,11 @@ local configTemplate = {
                   logsListSize = configManager.validators.number:new({
                     min = {value = 16}
                   }),
+                  -- Optional, so a config.lua from before this option still loads
+                  messageFormat = configManager.validators.string:new({isNullable = true}),
                 },
                 objectFactory = function (value)
-                  return logger.handlers.scrollList:new(value.logLevel, value.logsListSize)
+                  return logger.handlers.scrollList:new(value.logLevel, value.logsListSize, value.messageFormat or "{Time:%H:%M} {Message}")
                 end
               }
             ),

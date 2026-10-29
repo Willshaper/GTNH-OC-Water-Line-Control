@@ -10,6 +10,8 @@ local preEndTicks = 200
 ---@class LineController
 ---@field lastWorkProgress integer
 ---@field isPreEndSent boolean
+---@field wasWorking boolean
+---@field controllers ControllersConfig
 ---@field controllerProxy gt_machine
 local lineController = {}
 
@@ -23,9 +25,13 @@ function lineController:constructor()
 end
 
 ---Init
-function lineController:init()
+---@param controllers ControllersConfig
+function lineController:init(controllers)
+  self.controllers = controllers or {}
+
   term.write("Init Line components: ")
   self:initComponents()
+  self.wasWorking = self.controllerProxy.hasWork()
   term.write("ok\n")
 end
 
@@ -33,8 +39,9 @@ end
 function lineController:loop()
   local workProgress = self.controllerProxy.getWorkProgress()
   local workMaxProgress = self.controllerProxy.getWorkMaxProgress()
+  local hasWork = self.controllerProxy.hasWork()
 
-  if self.lastWorkProgress > workProgress or (self.controllerProxy.hasWork() == false and self.lastWorkProgress ~= 0) then
+  if self.lastWorkProgress > workProgress or (hasWork == false and self.lastWorkProgress ~= 0) then
     -- The loop missed the last seconds of the cycle, so choose the units for the cycle after this one
     if self.isPreEndSent == false then
       event.push("cycle_pre_end", true)
@@ -43,7 +50,19 @@ function lineController:loop()
     event.push("cycle_end")
     self.lastWorkProgress = 0
     self.isPreEndSent = false
+
+    if hasWork == true then
+      self:logCycleStart()
+    end
+  elseif hasWork == true and self.wasWorking == false then
+    self:logCycleStart()
   end
+
+  if hasWork == false and self.wasWorking == true then
+    event.push("log_warning", "[Line] Plant stopped (switched off or no power)")
+  end
+
+  self.wasWorking = hasWork
 
   -- Units must be chosen before the cycle ends, because the next one starts in the same tick
   if workMaxProgress ~= 0 and workProgress >= workMaxProgress - preEndTicks and self.isPreEndSent == false then
@@ -51,9 +70,25 @@ function lineController:loop()
     self.isPreEndSent = true
   end
 
-  if self.controllerProxy.hasWork() == true then
+  if hasWork == true then
     self.lastWorkProgress = workProgress
   end
+end
+
+---Log the units running in the cycle that just started
+---@private
+function lineController:logCycleStart()
+  local running = {}
+
+  for tier = 1, 8 do
+    local controller = self.controllers["t"..tier]
+
+    if controller ~= nil and controller.controllerProxy ~= nil and controller.controllerProxy.hasWork() == true then
+      table.insert(running, "T"..tier)
+    end
+  end
+
+  event.push("log_debug", "[Line] Cycle started: "..(#running > 0 and table.concat(running, " ") or "no units"))
 end
 
 ---Get current state

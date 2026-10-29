@@ -1,3 +1,4 @@
+local event = require("event")
 local term = require("term")
 local keyboard = require("keyboard")
 
@@ -8,6 +9,7 @@ local simpleGui = require("lib.simple-gui.index")
 local configTemplate = require("src.config-template")
 local lineControllerClass = require("src.line-controller")
 local scrollList = require("src.gui-widgets.scroll-list")
+local formatAmount = require("src.format-amount")
 
 package.loaded.config = nil
 local config = require("config")
@@ -79,7 +81,9 @@ local function init()
 
   term.clear()
 
-  lineController:init()
+  event.push("log_info", "Program started, QC mode "..config.quantityController.controlMode)
+
+  lineController:init(config.controllers)
 
   for i = 1, 8, 1 do
     local key = "t"..i
@@ -115,26 +119,6 @@ local function loop()
 
     os.sleep(1)
   end
-end
-
----Format an amount of fluid in L, e.g. 20000000000 -> "20.0G"
----@param value number
----@return string
-local function formatAmount(value)
-  local units = {"", "k", "M", "G", "T", "P"}
-  local unitIndex = 1
-
-  -- 999950 shows as 1.0M, not 1000.0k
-  while value >= 999.95 and unitIndex < #units do
-    value = value / 1000
-    unitIndex = unitIndex + 1
-  end
-
-  if unitIndex == 1 then
-    return string.format("%.0f", value)
-  end
-
-  return string.format("%.1f%s", value, units[unitIndex])
 end
 
 ---Format the stock and threshold of a fluid read by the Quantity Controller

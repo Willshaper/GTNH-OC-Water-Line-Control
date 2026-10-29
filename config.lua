@@ -21,6 +21,7 @@ local config = {
       ["scrollList"] = {
         type = "scrollList",
         logLevel = "debug",
+        messageFormat = "{Time:%H:%M} {Message}",
         logsListSize = 32
       },
     }

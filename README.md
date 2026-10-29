@@ -10,6 +10,7 @@ What the fork adds:
 - Units that stop because they ran out of materials stay off ("Admin disabled"), so the Quantity Controller never turns them back on. Switch one back on by hand once it's restocked.
 - The screen shows each water's stock and threshold, and marks the units the Quantity Controller enabled with `*`.
 - The program switches the Water Purification Plant back on when it starts (`enableAutoStart`), so stopping it to edit `config.lua` no longer leaves the plant off.
+- The log on the screen shows the time, which units the Quantity Controller chose and why, and when a unit or the plant stops.
 - Auto update and the installer use this fork's releases.
 
 > [!CAUTION]
@@ -523,11 +524,21 @@ logger = {
     ["scrollList"] = {
       type = "scrollList",
       logLevel = "debug",
+      messageFormat = "{Time:%H:%M} {Message}",
       logsListSize = 32
     },
   }
 },
 ```
+
+The log on the screen (`scrollList`) shows the time and what the program does, newest on top. Scroll it with the arrow keys.
+- `[QC] Next cycle: T2 (G2 7.3M, lowest stock)` - the units the Quantity Controller chose, each time the choice changes, and why.
+- `[T3] Admin disabled until switched on by hand` and `[T3] Enabled by hand, no longer admin disabled`.
+- `[Line] Plant stopped (switched off or no power)` and `[Line] Water Purification Plant switched on`.
+- `[Line] Cycle started: T2` - the units running in each new cycle. This is a `debug` line, set `logLevel = "info"` to keep it off the screen.
+
+The same line again doesn't add a new row, the newest row gets a count instead, e.g. `[Line] Cycle started: T2 (x4)`. `logs.log` keeps every line.
+A `scrollList` without `messageFormat` uses `"{Time:%H:%M} {Message}"`.
 
 <a id="credits"></a>
 

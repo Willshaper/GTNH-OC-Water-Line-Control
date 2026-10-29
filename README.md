@@ -60,21 +60,21 @@ The screenshot is of the original program. This fork's screen looks like this, i
 ```
 15:29  Plant ██████░░░░  Next cycle in 37s           Balancing
 Unit Stock / Want    State                 Floor 1.0M  Min 8.0M
- T1  32.0M / 32.0M   Idle                   ████████████████
-▶T2   7.3M / 32.0M   Working 95%            ¦██│████████████
- T3 450.0k / 32.0M   ✗ Admin disabled       ¦██│████████████
- T4      0 / 32.0M   Unused                 ████████████████
+ T1  32.0M / 32.0M   Idle                   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+▶T2   7.3M / 32.0M   Working 95%            ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+ T3 450.0k / 32.0M   ✗ Admin disabled       ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+ T4      0 / 32.0M   Unused
 ...
- BM      0 / 32.0M                          ████████████████
+ BM      0 / 32.0M
 ────────────────────────────────────────
 |15:29 [QC] Next cycle: T2 (G2 7.3M, under min 8.0M)
 |15:29 [Line] Water Purification Plant switched on
-↑↓ scroll  Q quit  ▶ next  ✗ admin disabled  ¦ floor  │ min
+↑↓ scroll   Q quit   ▶ next cycle   ✗ admin disabled
 ```
 
 - The header shows the time, the cycle as a bar, the time to the next cycle (or "Plant stopped" in red) and the control mode.
 - Stock is red under `floorQty`, orange under `minQty` (both only in `singleThreadBalancing`), yellow under its threshold and green at or above it.
-- On the right, a gauge shows the stock against the threshold, with `¦` at `floorQty` and `│` at `minQty`. A water without a cap shows `-` as its threshold, and its gauge is scaled to the largest stock.
+- On the right, a bar shows the stock from 0 to its threshold, in the stock's colour. A water without a cap shows `-` as its threshold, and its bar is scaled to the largest stock.
 - `▶` marks the units the Quantity Controller chose for the next cycle.
 - State: "Working" with the success chance, "Waiting" (switched on, waiting for the next cycle), "Idle" (switched off by the Quantity Controller or by hand), "✗ Admin disabled" (stopped after a fault, see below) or "Unused" (not enabled in `config.lua`).
 

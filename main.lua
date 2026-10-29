@@ -196,13 +196,7 @@ end
 ---Footer: keys, and what the marks mean
 ---@return string
 local function renderFooter()
-  local footer = "&lightGray;↑↓ scroll  Q quit  &cyan;▶&lightGray; next  &red;✗&lightGray; admin disabled"
-
-  if config.quantityController.controlMode == "singleThreadBalancing" then
-    footer = footer.."  &white;¦&lightGray; floor  &white;│&lightGray; min"
-  end
-
-  return footer
+  return "&lightGray;↑↓ scroll   Q quit   &cyan;▶&lightGray; next cycle   &red;✗&lightGray; admin disabled"
 end
 
 ---Colour the state of a unit controller
@@ -275,7 +269,7 @@ local function largestStock()
   return largest
 end
 
----Gauge of a stock against its threshold (or the largest stock), with marks at the floor and min
+---Half height bar of a stock, from 0 to its threshold (or the largest stock without a cap), like the cycle bar
 ---@param index integer Index in the Quantity Controller's water levels
 ---@param isUsed boolean
 ---@param color string
@@ -283,36 +277,18 @@ end
 local function renderGauge(index, isUsed, color)
   local quantityController = config.quantityController
 
-  if quantityController.controlMode == "disabled" then
+  if quantityController.controlMode == "disabled" or isUsed == false then
     return ""
   end
 
   local scale = quantityController:isCapped(index) and quantityController.waterThresholds[index] or largestStock()
   local filled = 0
 
-  if isUsed and scale > 0 then
+  if scale > 0 then
     filled = math.min(gaugeWidth, math.floor(quantityController.waterLevels[index] / scale * gaugeWidth + 0.5))
   end
 
-  local cells = {}
-
-  for i = 1, gaugeWidth do
-    cells[i] = i <= filled and color.."█" or "&darkSlateGrey;█"
-  end
-
-  -- A mark goes in the cell its amount falls in, and only when it is on the scale
-  local function mark(amount, symbol)
-    if amount > 0 and amount <= scale then
-      cells[math.max(1, math.ceil(amount / scale * gaugeWidth))] = "&white;"..symbol
-    end
-  end
-
-  if isUsed and quantityController.controlMode == "singleThreadBalancing" then
-    mark(quantityController.floorQty, "¦")
-    mark(quantityController.minQty, "│")
-  end
-
-  return table.concat(cells)
+  return color..string.rep("▄", filled).."&darkSlateGrey;"..string.rep("▄", gaugeWidth - filled)
 end
 
 ---A row of the table: next-cycle mark, unit, stock / want and state

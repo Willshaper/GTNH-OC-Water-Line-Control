@@ -6,6 +6,7 @@ which can run the water line single threaded: one Purification Unit per cycle, c
 
 What the fork adds:
 - The [Quantity Controller](#quantity-controller) with four modes: `disabled`, `multiThread`, `singleThread` and `singleThreadBalancing`.
+- `singleThreadBalancing` fills every water to `floorQty`, then to `minQty`, lowest tier first, then keeps the least-stocked water running. A threshold of 0 means no cap.
 - T1 and T2 modules, so the Clarifier and the Ozonation unit can be switched on and off too.
 - Units that stop because they ran out of materials stay off ("Admin disabled"), so the Quantity Controller never turns them back on. Switch one back on by hand once it's restocked.
 - A coloured screen: each water's stock and threshold, the units the Quantity Controller chose (`▶`), and a countdown to the next cycle.
@@ -58,21 +59,22 @@ The screenshot is of the original program. This fork's screen looks like this, i
 
 ```
 15:29  Plant ██████░░░░  Next cycle in 37s           Balancing
-Unit Stock / Want    State
- T1  32.0M / 32.0M   Idle
-▶T2   7.3M / 32.0M   Working 95%
- T3 450.0k / 3.0M    ✗ Admin disabled
- T4      0 / 64.0k   Unused
+Unit Stock / Want    State                 Floor 1.0M  Min 8.0M
+ T1  32.0M / 32.0M   Idle                   ████████████████
+▶T2   7.3M / 32.0M   Working 95%            ¦██│████████████
+ T3 450.0k / 32.0M   ✗ Admin disabled       ¦██│████████████
+ T4      0 / 32.0M   Unused                 ████████████████
 ...
- BM      0 / 64.0k
+ BM      0 / 32.0M                          ████████████████
 ────────────────────────────────────────
 |15:29 [QC] Next cycle: T2 (G2 7.3M, under min 8.0M)
 |15:29 [Line] Water Purification Plant switched on
-↑↓ scroll   Q quit   ▶ next cycle   ✗ admin disabled
+↑↓ scroll  Q quit  ▶ next  ✗ admin disabled  ¦ floor  │ min
 ```
 
 - The header shows the time, the cycle as a bar, the time to the next cycle (or "Plant stopped" in red) and the control mode.
-- Stock is red under `minQty`, yellow under its threshold and green at or above it.
+- Stock is red under `floorQty`, orange under `minQty` (both only in `singleThreadBalancing`), yellow under its threshold and green at or above it.
+- On the right, a gauge shows the stock against the threshold, with `¦` at `floorQty` and `│` at `minQty`. A water without a cap shows `-` as its threshold, and its gauge is scaled to the largest stock.
 - `▶` marks the units the Quantity Controller chose for the next cycle.
 - State: "Working" with the success chance, "Waiting" (switched on, waiting for the next cycle), "Idle" (switched off by the Quantity Controller or by hand), "✗ Admin disabled" (stopped after a fault, see below) or "Unused" (not enabled in `config.lua`).
 
@@ -444,10 +446,22 @@ In the single thread modes, every unit of the line needs its module, or the unit
 - `"disabled"` - No quantity control. Every enabled unit runs every cycle, like the original program.
 - `"multiThread"` - Every tier below its threshold runs.
 - `"singleThread"` - The lowest tier below its threshold runs. This is how the wiki's singlethreaded waterline works.
-- `"singleThreadBalancing"` - The tier with the least water (of those below their threshold) runs, a lower tier wins a tie.
-  A tier below `minQty` always runs first, so a higher tier doesn't start without enough input.
-  Set `minQty` to the most water one cycle uses: your highest parallel count × 1000.
-  Keep every threshold above `minQty`: a tier at or above its threshold doesn't run, even when it has less than `minQty`.
+- `"singleThreadBalancing"` - One unit runs each cycle, chosen in three stages:
+  1. A water under `floorQty`: the lowest tier runs. Every water gets a basic stock first, from the bottom up.
+  2. A water under `minQty`: the lowest tier runs.
+  3. Otherwise the water with the least stock (of those below their threshold) runs, a lower tier wins a tie.
+
+  Keep `floorQty` below `minQty`, and `minQty` below every threshold. The log warns at start-up when they are out of order.
+  `minQty` should be at least one cycle's input (your highest parallel count × 1000). More builds a reserve before you raise the parallels.
+  When a unit's input runs low, it runs fewer parallels that cycle.
+
+  Example with `floorQty = 1000000` and `minQty = 8000000`: with G1 at 500k and G2 at 550k, T1 runs (both under the floor, T1 is lower).
+  Once both are over 1M, T1 runs until G1 has 8M, then T2 until G2 has 8M. After that, the water with the least stock runs each cycle.
+
+A threshold of `0`, or one left out, means no cap: that water keeps being made.
+In `singleThreadBalancing` the waters without a cap then stay level with each other, and the plant never goes idle.
+In `singleThread` a water without a cap always wins, so no tier above it runs. The log warns about this at start-up.
+In `multiThread` its unit runs every cycle.
 
 T8 also runs when Stabilised Baryonic Matter is below its threshold. T8 makes it, and it's needed to realign quark catalysts.
 
@@ -462,17 +476,23 @@ Switched on in the last few seconds of a cycle, it can start once next to the un
 quantityController = { -- Decides which units run, from the amount of each water in the ME network
   controlMode = "disabled", -- "disabled", "multiThread", "singleThread" or "singleThreadBalancing"
   meInterfaceAddress = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", -- Address of me interface on the network which stores the water
-  minQty = 32000, -- Tiers with less water than this run first (singleThreadBalancing). Set it to the most water one cycle uses: max parallels * 1000, and keep every threshold above it
-  waterThresholds = { -- Amount to keep stocked, in L
-    t1 = 64000,
-    t2 = 64000,
-    t3 = 64000,
-    t4 = 64000,
-    t5 = 64000,
-    t6 = 64000,
-    t7 = 64000,
-    t8 = 64000,
-    stabilisedBaryonicMatter = 64000 -- Made by T8, needed to realign quark catalysts
+
+  -- singleThreadBalancing picks one unit each cycle, in this order:
+  -- 1. A water under floorQty: the lowest tier runs
+  -- 2. A water under minQty: the lowest tier runs
+  -- 3. Otherwise the water with the least stock (under its threshold) runs
+  floorQty = 1000000, -- Every water is filled to this first (singleThreadBalancing)
+  minQty = 8000000, -- Then every water is filled to this (singleThreadBalancing). At least one cycle's input (parallels * 1000), more builds a reserve
+  waterThresholds = { -- Amount to keep stocked, in L. 0: no cap, the water keeps being made
+    t1 = 32000000,
+    t2 = 32000000,
+    t3 = 32000000,
+    t4 = 32000000,
+    t5 = 32000000,
+    t6 = 32000000,
+    t7 = 32000000,
+    t8 = 32000000,
+    stabilisedBaryonicMatter = 32000000 -- Made by T8, needed to realign quark catalysts
   }
 }
 ```
@@ -541,7 +561,7 @@ logger = {
 ```
 
 The log on the screen (`scrollList`) shows the time and what the program does, newest on top. Scroll it with the arrow keys.
-- `[QC] Next cycle: T2 (G2 7.3M, lowest stock)` - the units the Quantity Controller chose, each time the choice changes, and why.
+- `[QC] Next cycle: T2 (G2 7.3M, lowest stock)` - the units the Quantity Controller chose, each time the choice changes, and why ("under floor", "under min", "lowest stock").
 - `[T3] Admin disabled until switched on by hand` and `[T3] Enabled by hand, no longer admin disabled`.
 - `[Line] Plant stopped (switched off or no power)` and `[Line] Water Purification Plant switched on`.
 - `[Line] Cycle started: T2` - the units running in each new cycle. This is a `debug` line, set `logLevel = "info"` to keep it off the screen.

@@ -39,7 +39,8 @@ end
 ---@field controlMode QuantityControlMode
 ---@field meInterfaceAddress string
 ---@field minQty number
----@field waterThresholds number[]
+---@field floorQty number
+---@field waterThresholds number[] 0 is no cap
 ---@field controllers ControllersConfig
 ---@field meInterfaceProxy me_interface
 ---@field waterLevels number[]
@@ -52,12 +53,14 @@ local quantityController = {}
 ---@param controlMode QuantityControlMode
 ---@param meInterfaceAddress string
 ---@param minQty number
----@param waterThresholds number[]
+---@param waterThresholds number[] 0 is no cap
+---@param floorQty? number
 ---@return QuantityController
-function quantityController:constructor(controlMode, meInterfaceAddress, minQty, waterThresholds)
+function quantityController:constructor(controlMode, meInterfaceAddress, minQty, waterThresholds, floorQty)
   self.controlMode = controlMode
   self.meInterfaceAddress = meInterfaceAddress
   self.minQty = minQty
+  self.floorQty = floorQty or 0
   self.waterThresholds = waterThresholds
 
   self.waterLevels = {0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -79,6 +82,7 @@ function quantityController:init(controllers)
 
   term.write("Init Quantity Controller: ")
   self.meInterfaceProxy = componentDiscover.proxy(self.meInterfaceAddress, "me_interface", "[QC] ME Interface")
+  self:checkSettings()
 
   event.listen("cycle_pre_end", function (_, isLate)
     if isLate == true then
@@ -143,12 +147,81 @@ function quantityController:isTierUsable(tier)
   return controller ~= nil and controller.isAdminEnabled
 end
 
+---Check if the fluid at an index of fluidNames has a threshold. Without one it keeps being made
+---@param index integer
+---@return boolean
+function quantityController:isCapped(index)
+  return self.waterThresholds[index] > 0
+end
+
 ---Check if the fluid at an index of fluidNames is below its threshold
 ---@param index integer
 ---@return boolean
 ---@private
 function quantityController:isBelowThreshold(index)
-  return self.waterLevels[index] < self.waterThresholds[index]
+  return self:isCapped(index) == false or self.waterLevels[index] < self.waterThresholds[index]
+end
+
+---Check if the unit which makes the fluid at an index of fluidNames may run for it
+---@param index integer
+---@return boolean
+---@private
+function quantityController:isCandidate(index)
+  return self:isTierUsable(tierOf(index)) and self:isBelowThreshold(index)
+end
+
+---Find the lowest tier whose fluid is under an amount
+---@param amount number
+---@return integer|nil index
+---@private
+function quantityController:findLowestUnder(amount)
+  if amount <= 0 then
+    return nil
+  end
+
+  for index = 1, 9 do
+    if self:isCandidate(index) and self.waterLevels[index] < amount then
+      return index
+    end
+  end
+
+  return nil
+end
+
+---Warn about settings that can never take effect
+---@private
+function quantityController:checkSettings()
+  if self.controlMode == "singleThreadBalancing" then
+    if self.floorQty > 0 and self.floorQty > self.minQty then
+      event.push("log_warning", "[QC] floorQty "..formatAmount(self.floorQty).." is above minQty "..formatAmount(self.minQty))
+    end
+
+    for index = 1, 9 do
+      local threshold = self.waterThresholds[index]
+
+      if self.controllers["t"..tierOf(index)] ~= nil and self:isCapped(index) then
+        if threshold < self.floorQty then
+          event.push("log_warning", "[QC] "..fluidLabel(index).." Want "..formatAmount(threshold).." is under floor "..formatAmount(self.floorQty))
+        elseif threshold < self.minQty then
+          event.push("log_warning", "[QC] "..fluidLabel(index).." Want "..formatAmount(threshold).." is under min "..formatAmount(self.minQty))
+        end
+      end
+    end
+  elseif self.controlMode == "singleThread" then
+    -- The lowest tier without a cap always wins, so no tier above it runs
+    for index = 1, 8 do
+      if self.controllers["t"..index] ~= nil and self:isCapped(index) == false then
+        for tier = index + 1, 8 do
+          if self.controllers["t"..tier] ~= nil then
+            event.push("log_warning", "[QC] "..fluidLabel(index).." has no cap: T"..tier.." and up never run")
+            return
+          end
+        end
+
+        return
+      end
+    end
+  end
 end
 
 ---Choose which tiers run in the next cycle and enable only those
@@ -170,43 +243,47 @@ function quantityController:updateControllerEnablement()
   elseif self.controlMode == "singleThread" then
     -- The lowest tier below its threshold runs
     for index = 1, 9 do
-      if self:isTierUsable(tierOf(index)) and self:isBelowThreshold(index) then
+      if self:isCandidate(index) then
         isTierActive[tierOf(index)] = true
-        reason = self:describeLevel(index, "under "..formatAmount(self.waterThresholds[index]))
+        reason = self:describeLevel(index, self:isCapped(index) and "under "..formatAmount(self.waterThresholds[index]) or "no cap")
         break
       end
     end
   elseif self.controlMode == "singleThreadBalancing" then
-    -- The tier with the least water (below its threshold) runs, lower tiers win ties.
-    -- A tier below minQty runs first, so higher tiers don't start without enough input
-    local winner = nil
-    local candidateCount = 0
+    -- 1. A water under floorQty: the lowest tier runs, so every water gets a stock, bottom up
+    -- 2. A water under minQty: the lowest tier runs
+    -- 3. Otherwise the water with the least stock (below its threshold) runs, lower tiers win ties
+    local winner = self:findLowestUnder(self.floorQty)
+    local why = "under floor "..formatAmount(self.floorQty)
 
-    for index = 1, 9 do
-      if self:isTierUsable(tierOf(index)) and self:isBelowThreshold(index) then
-        local isBelowMinQty = self.waterLevels[index] < self.minQty
-        candidateCount = candidateCount + 1
+    if winner == nil then
+      winner = self:findLowestUnder(self.minQty)
+      why = "under min "..formatAmount(self.minQty)
+    end
 
-        if winner == nil or self.waterLevels[index] < self.waterLevels[winner] or isBelowMinQty then
-          winner = index
+    if winner == nil then
+      local candidateCount = 0
 
-          if isBelowMinQty then
-            break
+      for index = 1, 9 do
+        if self:isCandidate(index) then
+          candidateCount = candidateCount + 1
+
+          if winner == nil or self.waterLevels[index] < self.waterLevels[winner] then
+            winner = index
           end
         end
+      end
+
+      if winner ~= nil and candidateCount == 1 and self:isCapped(winner) then
+        why = "under "..formatAmount(self.waterThresholds[winner])
+      else
+        why = "lowest stock"
       end
     end
 
     if winner ~= nil then
       isTierActive[tierOf(winner)] = true
-
-      if self.waterLevels[winner] < self.minQty then
-        reason = self:describeLevel(winner, "under min "..formatAmount(self.minQty))
-      elseif candidateCount > 1 then
-        reason = self:describeLevel(winner, "lowest stock")
-      else
-        reason = self:describeLevel(winner, "under "..formatAmount(self.waterThresholds[winner]))
-      end
+      reason = self:describeLevel(winner, why)
     end
   end
 

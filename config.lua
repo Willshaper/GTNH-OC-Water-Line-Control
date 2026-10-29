@@ -77,17 +77,23 @@ local config = {
   quantityController = { -- Decides which units run, from the amount of each water in the ME network
     controlMode = "disabled", -- "disabled", "multiThread", "singleThread" or "singleThreadBalancing"
     meInterfaceAddress = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", -- Address of me interface on the network which stores the water
-    minQty = 32000, -- Tiers with less water than this run first (singleThreadBalancing). Set it to the most water one cycle uses: max parallels * 1000, and keep every threshold above it
-    waterThresholds = { -- Amount to keep stocked, in L
-      t1 = 64000,
-      t2 = 64000,
-      t3 = 64000,
-      t4 = 64000,
-      t5 = 64000,
-      t6 = 64000,
-      t7 = 64000,
-      t8 = 64000,
-      stabilisedBaryonicMatter = 64000 -- Made by T8, needed to realign quark catalysts
+
+    -- singleThreadBalancing picks one unit each cycle, in this order:
+    -- 1. A water under floorQty: the lowest tier runs
+    -- 2. A water under minQty: the lowest tier runs
+    -- 3. Otherwise the water with the least stock (under its threshold) runs
+    floorQty = 1000000, -- Every water is filled to this first (singleThreadBalancing)
+    minQty = 8000000, -- Then every water is filled to this (singleThreadBalancing). At least one cycle's input (parallels * 1000), more builds a reserve
+    waterThresholds = { -- Amount to keep stocked, in L. 0: no cap, the water keeps being made
+      t1 = 32000000,
+      t2 = 32000000,
+      t3 = 32000000,
+      t4 = 32000000,
+      t5 = 32000000,
+      t6 = 32000000,
+      t7 = 32000000,
+      t8 = 32000000,
+      stabilisedBaryonicMatter = 32000000 -- Made by T8, needed to realign quark catalysts
     }
   }
 }

@@ -62,7 +62,7 @@ local mainTemplate = {
     "#logsScrollList#",
     "#logsScrollList#",
     "#logsScrollList#",
-    "&lightGray;↑↓ scroll   Q quit   &cyan;▶&lightGray; next cycle   &red;✗&lightGray; admin disabled"
+    "$footer$"
   }
 }
 
@@ -76,6 +76,12 @@ local modeNames = {
 
 ---Width of the cycle progress bar in the header
 local barWidth = 10
+
+---Width of the state column, so the stock gauges after it line up
+local stateWidth = 22
+
+---Width of the stock gauge at the end of each row
+local gaugeWidth = 16
 
 local controllersStates = {}
 
@@ -164,14 +170,39 @@ local function renderHeader()
   return left..string.rep(" ", spaces)..right
 end
 
----Column titles, lined up with renderRow
+---Column titles, lined up with renderRow, and the floor and min of singleThreadBalancing
 ---@return string
 local function renderColumns()
-  if config.quantityController.controlMode == "disabled" then
+  local quantityController = config.quantityController
+
+  if quantityController.controlMode == "disabled" then
     return "&lightGray;"..string.format("%-4s%15s  %s", "Unit", "", "State")
   end
 
-  return "&lightGray;"..string.format("%-4s%6s / %-6s  %s", "Unit", "Stock", "Want", "State")
+  local left = string.format("%-4s%6s / %-6s  %s", "Unit", "Stock", "Want", "State")
+  local right = ""
+
+  if quantityController.controlMode == "singleThreadBalancing" then
+    if quantityController.floorQty > 0 then
+      right = "Floor "..formatAmount(quantityController.floorQty).."  "
+    end
+
+    right = right.."Min "..formatAmount(quantityController.minQty)
+  end
+
+  return "&lightGray;"..left..string.rep(" ", math.max(1, mainTemplate.width - #left - #right))..right
+end
+
+---Footer: keys, and what the marks mean
+---@return string
+local function renderFooter()
+  local footer = "&lightGray;↑↓ scroll  Q quit  &cyan;▶&lightGray; next  &red;✗&lightGray; admin disabled"
+
+  if config.quantityController.controlMode == "singleThreadBalancing" then
+    footer = footer.."  &white;¦&lightGray; floor  &white;│&lightGray; min"
+  end
+
+  return footer
 end
 
 ---Colour the state of a unit controller
@@ -199,7 +230,89 @@ local function formatState(state)
   local chanceNumber = tonumber(chance)
   local chanceColor = chanceNumber >= 90 and "&greenYellow;" or chanceNumber >= 50 and "&yellow;" or "&darkOrange;"
 
-  return nameText.." "..chanceColor..chance.."%"
+  return nameText.." "..chanceColor..math.floor(chanceNumber).."%"
+end
+
+---Get the colour of a stock: red under the floor, orange under min (both only in singleThreadBalancing),
+---yellow under the threshold, otherwise green
+---@param index integer Index in the Quantity Controller's water levels
+---@param isUsed boolean
+---@return string
+local function stockColor(index, isUsed)
+  local quantityController = config.quantityController
+  local level = quantityController.waterLevels[index]
+
+  if isUsed == false then
+    return "&gray;"
+  end
+
+  if quantityController.controlMode == "singleThreadBalancing" then
+    if level < quantityController.floorQty then
+      return "&red;"
+    elseif level < quantityController.minQty then
+      return "&darkOrange;"
+    end
+  end
+
+  if quantityController:isCapped(index) and level < quantityController.waterThresholds[index] then
+    return "&yellow;"
+  end
+
+  return "&green;"
+end
+
+---Get the largest stock of the waters whose unit is used, the scale of gauges without a cap
+---@return number
+local function largestStock()
+  local largest = 0
+
+  for index = 1, 9 do
+    if config.controllers["t"..math.min(index, 8)] ~= nil then
+      largest = math.max(largest, config.quantityController.waterLevels[index])
+    end
+  end
+
+  return largest
+end
+
+---Gauge of a stock against its threshold (or the largest stock), with marks at the floor and min
+---@param index integer Index in the Quantity Controller's water levels
+---@param isUsed boolean
+---@param color string
+---@return string
+local function renderGauge(index, isUsed, color)
+  local quantityController = config.quantityController
+
+  if quantityController.controlMode == "disabled" then
+    return ""
+  end
+
+  local scale = quantityController:isCapped(index) and quantityController.waterThresholds[index] or largestStock()
+  local filled = 0
+
+  if isUsed and scale > 0 then
+    filled = math.min(gaugeWidth, math.floor(quantityController.waterLevels[index] / scale * gaugeWidth + 0.5))
+  end
+
+  local cells = {}
+
+  for i = 1, gaugeWidth do
+    cells[i] = i <= filled and color.."█" or "&darkSlateGrey;█"
+  end
+
+  -- A mark goes in the cell its amount falls in, and only when it is on the scale
+  local function mark(amount, symbol)
+    if amount > 0 and amount <= scale then
+      cells[math.max(1, math.ceil(amount / scale * gaugeWidth))] = "&white;"..symbol
+    end
+  end
+
+  if isUsed and quantityController.controlMode == "singleThreadBalancing" then
+    mark(quantityController.floorQty, "¦")
+    mark(quantityController.minQty, "│")
+  end
+
+  return table.concat(cells)
 end
 
 ---A row of the table: next-cycle mark, unit, stock / want and state
@@ -212,33 +325,27 @@ local function renderRow(label, index, tier)
   local isUsed = config.controllers["t"..tier] ~= nil
   local marker = (index <= 8 and quantityController.isTierActive[index]) and "&cyan;▶" or " "
   local water = string.rep(" ", 15)
+  local color = stockColor(index, isUsed)
 
   if quantityController.controlMode ~= "disabled" then
-    local level = quantityController.waterLevels[index]
-    local threshold = quantityController.waterThresholds[index]
-    local stockColor = "&green;"
+    local want = quantityController:isCapped(index) and formatAmount(quantityController.waterThresholds[index]) or "-"
 
-    if isUsed == false then
-      stockColor = "&gray;"
-    elseif level < quantityController.minQty then
-      stockColor = "&red;"
-    elseif level < threshold then
-      stockColor = "&yellow;"
-    end
-
-    water = stockColor..string.format("%6s", formatAmount(level))
-      .."&lightGray; / "..(isUsed and "&lightGray;" or "&gray;")..string.format("%-6s", formatAmount(threshold))
+    water = color..string.format("%6s", formatAmount(quantityController.waterLevels[index]))
+      .."&lightGray; / "..(isUsed and "&lightGray;" or "&gray;")..string.format("%-6s", want)
   end
 
   local state = index <= 8 and formatState(controllersStates["t"..index]) or ""
+  local statePadding = string.rep(" ", math.max(0, stateWidth - visibleWidth(state)))
 
-  return marker..(isUsed and "&white;" or "&gray;")..string.format("%-3s", label)..water.."  "..state
+  return marker..(isUsed and "&white;" or "&gray;")..string.format("%-3s", label)..water.."  "
+    ..state..statePadding.." "..renderGauge(index, isUsed, color)
 end
 
 local function guiLoop()
   local values = {
     header = renderHeader(),
     columns = renderColumns(),
+    footer = renderFooter(),
     bmRow = renderRow("BM", 9, 8),
     logs = config.logger.handlers["scrollList"]:getLogs()
   }

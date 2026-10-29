@@ -46,9 +46,11 @@ local function isQuantityControlDisabled(value, config)
 end
 
 ---Amount validator for water thresholds
+---@param isNullable? boolean
 ---@return NumberValidator
-local function amountValidator()
+local function amountValidator(isNullable)
   return configManager.validators.number:new({
+    isNullable = isNullable == true,
     min = {value = 0}
   })
 end
@@ -283,33 +285,38 @@ local configTemplate = {
       meInterfaceAddress = configManager.validators.address:new({
         skipper = isQuantityControlDisabled
       }),
+      -- Optional, so a config.lua from before this option still loads. Missing means no floor stage
+      floorQty = amountValidator(true),
       minQty = amountValidator(),
+      -- A missing threshold, or 0, means no cap
       waterThresholds = configManager.validators.object:new({
+        isNullable = true,
         template = {
-          t1 = amountValidator(),
-          t2 = amountValidator(),
-          t3 = amountValidator(),
-          t4 = amountValidator(),
-          t5 = amountValidator(),
-          t6 = amountValidator(),
-          t7 = amountValidator(),
-          t8 = amountValidator(),
-          stabilisedBaryonicMatter = amountValidator(),
+          t1 = amountValidator(true),
+          t2 = amountValidator(true),
+          t3 = amountValidator(true),
+          t4 = amountValidator(true),
+          t5 = amountValidator(true),
+          t6 = amountValidator(true),
+          t7 = amountValidator(true),
+          t8 = amountValidator(true),
+          stabilisedBaryonicMatter = amountValidator(true),
         }
       }),
     },
     objectFactory = function (value)
-      local thresholds = value.waterThresholds
+      local thresholds = value.waterThresholds or {}
 
       return quantityController:new(
         value.controlMode,
         value.meInterfaceAddress,
         value.minQty,
         {
-          thresholds.t1, thresholds.t2, thresholds.t3, thresholds.t4,
-          thresholds.t5, thresholds.t6, thresholds.t7, thresholds.t8,
-          thresholds.stabilisedBaryonicMatter
-        }
+          thresholds.t1 or 0, thresholds.t2 or 0, thresholds.t3 or 0, thresholds.t4 or 0,
+          thresholds.t5 or 0, thresholds.t6 or 0, thresholds.t7 or 0, thresholds.t8 or 0,
+          thresholds.stabilisedBaryonicMatter or 0
+        },
+        value.floorQty or 0
       )
     end
   })

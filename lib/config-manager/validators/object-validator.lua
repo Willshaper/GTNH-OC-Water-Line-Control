@@ -58,6 +58,11 @@ end
 ---@param value table
 ---@return table
 function objectValidator:factory(value)
+  -- A nullable object that was left out stays nil
+  if value == nil then
+    return nil
+  end
+
   local buildedConfig = helper.build(self.template, value)
 
   if self.objectFactory then

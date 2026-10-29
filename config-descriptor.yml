@@ -264,75 +264,82 @@ descriptor:
           label: ME Interface Address
           description: Address of me interface on the network which stores the water
 
+        - key: qcFloorQty
+          type: integer
+          default: 1000000
+          min: 0
+          label: Floor Quantity
+          description: Single thread balancing fills every water to this first, lowest tier first. 0 skips this stage
+
         - key: qcMinQty
           type: integer
-          default: 32000
+          default: 8000000
           min: 0
           label: Min Quantity
-          description: Tiers with less water than this run first (single thread balancing). Set it to the most water one cycle uses, max parallels * 1000, and keep every threshold above it
+          description: Single thread balancing then fills every water to this, lowest tier first. At least one cycle's input (parallels * 1000), more builds a reserve
 
         - key: qcThresholdT1
           type: integer
-          default: 64000
+          default: 32000000
           min: 0
           label: T1 Threshold
-          description: Amount of T1 water to keep stocked, in L
+          description: Amount of T1 water to keep stocked, in L. 0 is no cap
 
         - key: qcThresholdT2
           type: integer
-          default: 64000
+          default: 32000000
           min: 0
           label: T2 Threshold
-          description: Amount of T2 water to keep stocked, in L
+          description: Amount of T2 water to keep stocked, in L. 0 is no cap
 
         - key: qcThresholdT3
           type: integer
-          default: 64000
+          default: 32000000
           min: 0
           label: T3 Threshold
-          description: Amount of T3 water to keep stocked, in L
+          description: Amount of T3 water to keep stocked, in L. 0 is no cap
 
         - key: qcThresholdT4
           type: integer
-          default: 64000
+          default: 32000000
           min: 0
           label: T4 Threshold
-          description: Amount of T4 water to keep stocked, in L
+          description: Amount of T4 water to keep stocked, in L. 0 is no cap
 
         - key: qcThresholdT5
           type: integer
-          default: 64000
+          default: 32000000
           min: 0
           label: T5 Threshold
-          description: Amount of T5 water to keep stocked, in L
+          description: Amount of T5 water to keep stocked, in L. 0 is no cap
 
         - key: qcThresholdT6
           type: integer
-          default: 64000
+          default: 32000000
           min: 0
           label: T6 Threshold
-          description: Amount of T6 water to keep stocked, in L
+          description: Amount of T6 water to keep stocked, in L. 0 is no cap
 
         - key: qcThresholdT7
           type: integer
-          default: 64000
+          default: 32000000
           min: 0
           label: T7 Threshold
-          description: Amount of T7 water to keep stocked, in L
+          description: Amount of T7 water to keep stocked, in L. 0 is no cap
 
         - key: qcThresholdT8
           type: integer
-          default: 64000
+          default: 32000000
           min: 0
           label: T8 Threshold
-          description: Amount of T8 water to keep stocked, in L
+          description: Amount of T8 water to keep stocked, in L. 0 is no cap
 
         - key: qcThresholdBaryonicMatter
           type: integer
-          default: 64000
+          default: 32000000
           min: 0
           label: Stabilised Baryonic Matter Threshold
-          description: Amount of Stabilised Baryonic Matter to keep stocked, in L. T8 makes it, and it is needed to realign quark catalysts
+          description: Amount of Stabilised Baryonic Matter to keep stocked, in L. 0 is no cap. T8 makes it, and it is needed to realign quark catalysts
 
   configTemplate: |
     local config = {
@@ -414,8 +421,14 @@ descriptor:
       quantityController = { -- Decides which units run, from the amount of each water in the ME network
         controlMode = "<field>qcControlMode</field>", -- "disabled", "multiThread", "singleThread" or "singleThreadBalancing"
         meInterfaceAddress = "<field>qcMeInterfaceAddress</field>", -- Address of me interface on the network which stores the water
-        minQty = <field>qcMinQty</field>, -- Tiers with less water than this run first (singleThreadBalancing). Set it to the most water one cycle uses: max parallels * 1000, and keep every threshold above it
-        waterThresholds = { -- Amount to keep stocked, in L
+
+        -- singleThreadBalancing picks one unit each cycle, in this order:
+        -- 1. A water under floorQty: the lowest tier runs
+        -- 2. A water under minQty: the lowest tier runs
+        -- 3. Otherwise the water with the least stock (under its threshold) runs
+        floorQty = <field>qcFloorQty</field>, -- Every water is filled to this first (singleThreadBalancing)
+        minQty = <field>qcMinQty</field>, -- Then every water is filled to this (singleThreadBalancing). At least one cycle's input (parallels * 1000), more builds a reserve
+        waterThresholds = { -- Amount to keep stocked, in L. 0: no cap, the water keeps being made
           t1 = <field>qcThresholdT1</field>,
           t2 = <field>qcThresholdT2</field>,
           t3 = <field>qcThresholdT3</field>,

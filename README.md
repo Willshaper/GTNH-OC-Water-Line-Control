@@ -6,7 +6,7 @@ which can run the water line single threaded: one Purification Unit per cycle, c
 
 What the fork adds:
 - The [Quantity Controller](#quantity-controller) with four modes: `disabled`, `multiThread`, `singleThread` and `singleThreadBalancing`.
-- `singleThreadBalancing` fills every water to `floorQty`, then to `minQty`, lowest tier first, then keeps the least-stocked water running. A threshold of 0 means no cap.
+- `singleThreadBalancing` fills every water to `floorQty`, then to `minQty`, lowest tier first, then keeps the least-stocked water running. A threshold of 0 means no cap. See [how it picks a unit](#balancing).
 - T1 and T2 modules, so the Clarifier and the Ozonation unit can be switched on and off too.
 - Units that stop because they ran out of materials stay off ("Admin disabled"), so the Quantity Controller never turns them back on. Switch one back on by hand once it's restocked.
 - A coloured screen: each water's stock and threshold, the units the Quantity Controller chose (`▶`), and a countdown to the next cycle.
@@ -53,30 +53,14 @@ And there is also the possibility of auto update at startup.
 
 #### Interface
 
-![Interface](/docs/interface.png)
-
-The screenshot is of the original program. This fork's screen looks like this, in colour:
-
-```
-15:29  Plant ██████░░░░  Next cycle in 37s           Balancing
-Unit Stock / Want    State                 Floor 1.0M  Min 8.0M
- T1  32.0M / 32.0M   Idle                   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-▶T2   7.3M / 32.0M   Working 95%            ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
- T3 450.0k / 32.0M   ✗ Admin disabled       ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
- T4      0 / 32.0M   Unused
-...
- BM      0 / 32.0M
-────────────────────────────────────────
-|15:29 [QC] Next cycle: T2 (G2 7.3M, under min 8.0M)
-|15:29 [Line] Water Purification Plant switched on
-↑↓ scroll   Q quit   ▶ next cycle   ✗ admin disabled
-```
+![Interface](/docs/interface-singlethread.png)
 
 - The header shows the time, the cycle as a bar, the time to the next cycle (or "Plant stopped" in red) and the control mode.
 - Stock is red under `floorQty`, orange under `minQty` (both only in `singleThreadBalancing`), yellow under its threshold and green at or above it.
 - On the right, a bar shows the stock from 0 to its threshold, in the stock's colour. A water without a cap shows `-` as its threshold, and its bar is scaled to the largest stock.
 - `▶` marks the units the Quantity Controller chose for the next cycle.
-- State: "Working" with the success chance, "Waiting" (switched on, waiting for the next cycle), "Idle" (switched off by the Quantity Controller or by hand), "✗ Admin disabled" (stopped after a fault, see below) or "Unused" (not enabled in `config.lua`).
+- State: "Working" with the success chance, "Waiting" (switched on, waiting for the next cycle), "Idle" (switched off by the Quantity Controller or by hand), "✗ Admin disabled" (stopped after a fault, see [Quantity Controller](#quantity-controller)) or "Unused" (not enabled in `config.lua`).
+- Below the line is the log, see [Configuration](#configuration).
 
 <a id="installation"></a>
 
@@ -86,7 +70,7 @@ Unit Stock / Want    State                 Floor 1.0M  Min 8.0M
 > On Java 8 the download from GitHub can fail, because Java rejects GitHub's certificates.
 > Then the only way to install the program is to copy its files to the computer by hand.
 
-To install program, you need a server with:
+To install program, you need a server (in a Server Rack) with:
 - Graphics Card (Tier 3): 1
 - Central Processing Unit (CPU) (Tier 3): 1
 - Memory (Tier 3.5): 2
@@ -97,9 +81,14 @@ To install program, you need a server with:
 
 ![Computer setup](/docs/server.png)
 
-Install the basic Open OS on your computer.
-Then run this command to install the fork. It downloads the latest release into `/home`.
-An existing `config.lua` is kept as `config.old.lua` (or `config.old2.lua` and so on, if that exists).
+It has to be a server: a whole line connects about 30 components (machines, transposers, ME interfaces and the computer's own parts).
+A Tier 3 CPU allows 16, and only a server can hold the Component Bus that adds 16 more.
+
+1. In the rack's GUI, link the server's connector to the side of the rack where the cable to the screen and the machines comes in.
+   A screen or cable touching the rack is not enough: until it is linked, the server only sees its own parts and the screen stays blank.
+2. Install OpenOS on the hard drive: boot from an OpenOS floppy (a Disk Drive mountable in the rack, or a normal computer with a disk drive), run `install` and pick the hard drive.
+3. Run this command to install the fork. It downloads the latest release into `/home`.
+   An existing `config.lua` is kept as `config.old.lua` (or `config.old2.lua` and so on, if that exists).
 
 ```shell
 wget -f https://raw.githubusercontent.com/Willshaper/GTNH-OC-Water-Line-Control/develop/setup.lua && setup
@@ -443,25 +432,44 @@ In the single thread modes, every unit of the line needs its module, or the unit
 
 #### Modes
 
+Write the mode exactly as below: the names are case-sensitive, so `SingleThreadBalancing` is refused.
+
 - `"disabled"` - No quantity control. Every enabled unit runs every cycle, like the original program.
 - `"multiThread"` - Every tier below its threshold runs.
 - `"singleThread"` - The lowest tier below its threshold runs. This is how the wiki's singlethreaded waterline works.
-- `"singleThreadBalancing"` - One unit runs each cycle, chosen in three stages:
-  1. A water under `floorQty`: the lowest tier runs. Every water gets a basic stock first, from the bottom up.
-  2. A water under `minQty`: the lowest tier runs.
-  3. Otherwise the water with the least stock (of those below their threshold) runs, a lower tier wins a tie.
-
-  Keep `floorQty` below `minQty`, and `minQty` below every threshold. The log warns at start-up when they are out of order.
-  `minQty` should be at least one cycle's input (your highest parallel count × 1000). More builds a reserve before you raise the parallels.
-  When a unit's input runs low, it runs fewer parallels that cycle.
-
-  Example with `floorQty = 1000000` and `minQty = 8000000`: with G1 at 500k and G2 at 550k, T1 runs (both under the floor, T1 is lower).
-  Once both are over 1M, T1 runs until G1 has 8M, then T2 until G2 has 8M. After that, the water with the least stock runs each cycle.
+- `"singleThreadBalancing"` - One unit runs each cycle, chosen in three stages, see below.
 
 A threshold of `0`, or one left out, means no cap: that water keeps being made.
-In `singleThreadBalancing` the waters without a cap then stay level with each other, and the plant never goes idle.
 In `singleThread` a water without a cap always wins, so no tier above it runs. The log warns about this at start-up.
 In `multiThread` its unit runs every cycle.
+
+<a id="balancing"></a>
+
+#### How singleThreadBalancing picks a unit
+
+About 10 seconds before each cycle ends, the program picks **one** unit for the next cycle.
+It checks three stages in order, and the first one that applies decides:
+
+1. **Floor** (`floorQty`, e.g. 1M): if any water is under the floor, the **lowest tier** of those runs.
+   Every water gets a basic stock first, from the bottom up.
+2. **Min** (`minQty`, e.g. 8M): if any water is under min, the **lowest tier** of those runs.
+3. **Least stock**: otherwise the water with the **least stock** runs, until it reaches its threshold (e.g. 32M). A lower tier wins a tie.
+
+Only units that are enabled in `config.lua`, not "Admin disabled", and whose water is under its threshold take part.
+Each unit uses the water of the tier below it: when that runs low, it runs fewer parallels that cycle.
+
+Example with a 1M floor, an 8M min and 32M thresholds: with G1 at 500k and G2 at 550k, T1 runs (both are under the floor, T1 is lower).
+Once both are over 1M, T1 runs until G1 has 8M, then T2 until G2 has 8M.
+After that the water with the least stock runs each cycle, so the waters climb to 32M together.
+
+A water without a cap (threshold `0`) also takes part in stage 3, so it climbs along with the others.
+Once every capped water is at its threshold, it gets every cycle, and the plant never goes idle.
+When a capped water drops under its threshold again, it usually has less stock than the uncapped one by then, so it runs first.
+
+Keep `floorQty` below `minQty`, and `minQty` below every threshold: the log warns at start-up when they are out of order.
+`minQty` should be at least one cycle's input (your highest parallel count × 1000).
+Players usually start with few parallels: a higher `minQty` builds a reserve before you raise them.
+`floorQty = 0` skips the floor stage, and a `config.lua` without `floorQty` has none.
 
 T8 also runs when Stabilised Baryonic Matter is below its threshold. T8 makes it, and it's needed to realign quark catalysts.
 
@@ -565,6 +573,7 @@ The log on the screen (`scrollList`) shows the time and what the program does, n
 - `[T3] Admin disabled until switched on by hand` and `[T3] Enabled by hand, no longer admin disabled`.
 - `[Line] Plant stopped (switched off or no power)` and `[Line] Water Purification Plant switched on`.
 - `[Line] Cycle started: T2` - the units running in each new cycle. This is a `debug` line, set `logLevel = "info"` to keep it off the screen.
+  "Cycle started: no units" while a unit was chosen means GregTech didn't start it, usually because an input (water, Ozone, a catalyst) was missing.
 
 The same line again doesn't add a new row, the newest row gets a count instead, e.g. `[Line] Cycle started: T2 (x4)`. `logs.log` keeps every line.
 A `scrollList` without `messageFormat` uses `"{Time:%H:%M} {Message}"`.

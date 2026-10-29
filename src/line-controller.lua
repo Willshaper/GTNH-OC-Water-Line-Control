@@ -91,18 +91,15 @@ function lineController:logCycleStart()
   event.push("log_debug", "[Line] Cycle started: "..(#running > 0 and table.concat(running, " ") or "no units"))
 end
 
----Get current state
----@return string
-function lineController:getCurrentState()
-  if self.controllerProxy == nil then
-    return "nil"
+---Get the progress of the running cycle in ticks, 0 and 0 when the plant isn't running
+---@return integer progress
+---@return integer maxProgress
+function lineController:getCycleProgress()
+  if self.controllerProxy == nil or self.controllerProxy.hasWork() == false then
+    return 0, 0
   end
 
-  if self.controllerProxy.hasWork() == true then
-    return tostring(math.ceil(self.controllerProxy.getWorkProgress() / 20)).."/"..tostring(math.ceil(self.controllerProxy.getWorkMaxProgress() / 20))
-  end
-
-  return "Disable"
+  return self.controllerProxy.getWorkProgress(), self.controllerProxy.getWorkMaxProgress()
 end
 
 ---Enable line controller, if it is switched off

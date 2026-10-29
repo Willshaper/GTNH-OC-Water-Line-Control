@@ -1,6 +1,7 @@
 local component = require("component")
 local term = require("term")
 local serialization = require("serialization")
+local unicode = require("unicode")
 
 local classBuilder = require("lib.class-builder.index")
 local stringUtilities = require("lib.string-utilities.index")
@@ -175,9 +176,14 @@ function simpleGui:render(values)
 
         i = i + 1
       else
-        component.gpu.set(x, y, symbol)
-        x = x + 1
-        i = i + 1
+        -- Take the whole UTF-8 character, so symbols like "▶" are drawn as one
+        local byte = symbol:byte()
+        local length = byte >= 0xF0 and 4 or byte >= 0xE0 and 3 or byte >= 0xC0 and 2 or 1
+        local character = renderedString:sub(i, i + length - 1)
+
+        component.gpu.set(x, y, character)
+        x = x + unicode.charWidth(character)
+        i = i + length
       end
     end
 

@@ -8,7 +8,7 @@ What the fork adds:
 - The [Quantity Controller](#quantity-controller) with four modes: `disabled`, `multiThread`, `singleThread` and `singleThreadBalancing`.
 - T1 and T2 modules, so the Clarifier and the Ozonation unit can be switched on and off too.
 - Units that stop because they ran out of materials stay off ("Admin disabled"), so the Quantity Controller never turns them back on. Switch one back on by hand once it's restocked.
-- The screen shows each water's stock and threshold, and marks the units the Quantity Controller enabled with `*`.
+- A coloured screen: each water's stock and threshold, the units the Quantity Controller chose (`▶`), and a countdown to the next cycle.
 - The program switches the Water Purification Plant back on when it starts (`enableAutoStart`), so stopping it to edit `config.lua` no longer leaves the plant off.
 - The log on the screen shows the time, which units the Quantity Controller chose and why, and when a unit or the plant stops.
 - Auto update and the installer use this fork's releases.
@@ -54,18 +54,27 @@ And there is also the possibility of auto update at startup.
 
 ![Interface](/docs/interface.png)
 
-The screenshot is of the original program. This fork adds the stock and threshold of each water and a `*` for the units the Quantity Controller enabled:
+The screenshot is of the original program. This fork's screen looks like this, in colour:
 
 ```
-Line State: 120/120 | QC Mode: singleThreadBalancing
-
-T1    4.3M/3.0M   Controller disabled
-T2    3.7M/3.0M   Controller disabled
-T3*   2.7M/3.0M   State: [Wait End] Success: [100%]
-T4       0/64.0k  Unused
+15:29  Plant ██████░░░░  Next cycle in 37s           Balancing
+Unit Stock / Want    State
+ T1  32.0M / 32.0M   Idle
+▶T2   7.3M / 32.0M   Working 95%
+ T3 450.0k / 3.0M    ✗ Admin disabled
+ T4      0 / 64.0k   Unused
 ...
-BM       0/64.0k
+ BM      0 / 64.0k
+────────────────────────────────────────
+|15:29 [QC] Next cycle: T2 (G2 7.3M, under min 8.0M)
+|15:29 [Line] Water Purification Plant switched on
+↑↓ scroll   Q quit   ▶ next cycle   ✗ admin disabled
 ```
+
+- The header shows the time, the cycle as a bar, the time to the next cycle (or "Plant stopped" in red) and the control mode.
+- Stock is red under `minQty`, yellow under its threshold and green at or above it.
+- `▶` marks the units the Quantity Controller chose for the next cycle.
+- State: "Working" with the success chance, "Waiting" (switched on, waiting for the next cycle), "Idle" (switched off by the Quantity Controller or by hand), "✗ Admin disabled" (stopped after a fault, see below) or "Unused" (not enabled in `config.lua`).
 
 <a id="installation"></a>
 

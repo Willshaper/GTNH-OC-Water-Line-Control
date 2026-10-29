@@ -110,7 +110,12 @@ local configTemplate = {
                   messageFormat = configManager.validators.string:new({isNullable = true}),
                 },
                 objectFactory = function (value)
-                  return logger.handlers.scrollList:new(value.logLevel, value.logsListSize, value.messageFormat or "{Time:%H:%M} {Message}")
+                  return logger.handlers.scrollList:new(
+                    value.logLevel,
+                    value.logsListSize,
+                    value.messageFormat or "{Time:%H:%M} {Message}",
+                    {["[QC]"] = "cyan"}
+                  )
                 end
               }
             ),

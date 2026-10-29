@@ -73,7 +73,7 @@ function scrollList:render(values, y, args)
     return "&red;|&white;"..string
   end
 
-  return "|"..string
+  return "&gray;|&white;"..string
 end
 
 ---Register key handlers

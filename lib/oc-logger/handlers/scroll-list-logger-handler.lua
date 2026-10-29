@@ -5,14 +5,16 @@ local tableUtilities = require("lib.table-utilities.index")
 ---@field logs table<string>
 ---@field lastMessage string|nil
 ---@field repeatCount number
+---@field tagColors table<string, string>
 local scrollListLoggerHandler = {}
 
 ---Constructor
 ---@param logLevel "debug"|"info"|"warning"|"error"
 ---@param logListSize number
 ---@param messageFormat? string
+---@param tagColors? table<string, string> Colours for info messages starting with a tag, e.g. {["[QC]"] = "cyan"}
 ---@return ScrollListLoggerHandler
-function scrollListLoggerHandler:constructor(logLevel, logListSize, messageFormat)
+function scrollListLoggerHandler:constructor(logLevel, logListSize, messageFormat, tagColors)
 
   self.logLevel = logLevel
   self.logListSize = logListSize
@@ -22,6 +24,7 @@ function scrollListLoggerHandler:constructor(logLevel, logListSize, messageForma
 
   self.lastMessage = nil
   self.repeatCount = 0
+  self.tagColors = tagColors or {}
 
   return self
 end
@@ -32,20 +35,33 @@ end
 ---@param message string
 ---@param rawMessage? string
 function scrollListLoggerHandler:log(logger, level, message, rawMessage)
-  local line = nil
+  local color = nil
 
   if level == "debug" then
-    line = "&lightBlue;"..message.."&white;"
+    color = "&lightGray;"
   elseif level == "info" then
-    line = message
+    color = "&white;"
+
+    for tag, tagColor in pairs(self.tagColors) do
+      if rawMessage ~= nil and rawMessage:sub(1, #tag) == tag then
+        color = "&"..tagColor..";"
+      end
+    end
   elseif level == "warning" then
-    line = "&yellow;"..message.."&white;"
+    color = "&yellow;"
   elseif level == "error" then
-    line = "&red;[Error] "..message.."&white;"
+    color = "&red;[Error] "
   end
 
-  if line == nil then
+  if color == nil then
     return
+  end
+
+  -- The part of the format before the message (the time) is dimmed, the message gets the colour
+  local line = color..message.."&white;"
+
+  if rawMessage ~= nil and #message > #rawMessage and message:sub(-#rawMessage) == rawMessage then
+    line = "&lightGray;"..message:sub(1, #message - #rawMessage)..color..rawMessage.."&white;"
   end
 
   -- The same message again replaces the newest line with a count, so repeats don't push other lines off the screen

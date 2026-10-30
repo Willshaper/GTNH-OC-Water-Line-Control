@@ -46,7 +46,7 @@ end
 ---@field waterLevels number[]
 ---@field isTierActive boolean[]
 ---@field lastDecision string|nil
----@field isAdminDisableLogged boolean[]
+---@field isAttentionLogged boolean[]
 local quantityController = {}
 
 ---Constructor
@@ -66,7 +66,7 @@ function quantityController:constructor(controlMode, meInterfaceAddress, minQty,
   self.waterLevels = {0, 0, 0, 0, 0, 0, 0, 0, 0}
   self.isTierActive = {false, false, false, false, false, false, false, false}
   self.lastDecision = nil
-  self.isAdminDisableLogged = {}
+  self.isAttentionLogged = {}
 
   return self
 end
@@ -101,7 +101,7 @@ end
 
 ---Loop
 function quantityController:loop()
-  self:checkAdminStates()
+  self:checkAttentionStates()
 
   if self.controlMode == "disabled" then
     return
@@ -110,23 +110,23 @@ function quantityController:loop()
   self:updateWaterLevels()
 end
 
----Log units that were admin disabled after a fault, and let units that were enabled by hand be used again
+---Log units that need attention after a fault, and let units that were switched on by hand be used again
 ---@private
-function quantityController:checkAdminStates()
+function quantityController:checkAttentionStates()
   for tier = 1, 8 do
     local controller = self.controllers["t"..tier]
 
-    if controller ~= nil and controller:checkAdminReset() then
-      event.push("log_info", "[T"..tier.."] Enabled by hand, no longer admin disabled")
-      self.isAdminDisableLogged[tier] = false
+    if controller ~= nil and controller:checkAttentionCleared() then
+      event.push("log_info", "[T"..tier.."] Switched on by hand, back in use")
+      self.isAttentionLogged[tier] = false
 
       -- The Quantity Controller decides when it runs again, so it doesn't start next to the unit it chose
       if self.controlMode ~= "disabled" then
         controller:setEnabled(self.isTierActive[tier])
       end
-    elseif controller ~= nil and controller.isAdminEnabled == false and self.isAdminDisableLogged[tier] ~= true then
-      event.push("log_warning", "[T"..tier.."] Admin disabled until switched on by hand")
-      self.isAdminDisableLogged[tier] = true
+    elseif controller ~= nil and controller.needsAttention == true and self.isAttentionLogged[tier] ~= true then
+      event.push("log_warning", "[T"..tier.."] Needs attention, switch it on when fixed")
+      self.isAttentionLogged[tier] = true
     end
   end
 end
@@ -144,7 +144,7 @@ end
 function quantityController:isTierUsable(tier)
   local controller = self.controllers["t"..tier]
 
-  return controller ~= nil and controller.isAdminEnabled
+  return controller ~= nil and controller.needsAttention ~= true
 end
 
 ---Check if the fluid at an index of fluidNames has a threshold. Without one it keeps being made
@@ -335,7 +335,7 @@ function quantityController:logDecision(isTierActive, reason)
   self.lastDecision = decision
 
   if decision == "" then
-    event.push("log_info", "[QC] Next cycle: none, "..(self:isNeedBlocked() and "needed units admin disabled" or "all units at threshold"))
+    event.push("log_info", "[QC] Next cycle: none, "..(self:isNeedBlockedByAttention() and "units need attention" or "all units at threshold"))
   elseif reason ~= nil then
     event.push("log_info", "[QC] Next cycle: "..decision.." ("..reason..")")
   else
@@ -343,14 +343,14 @@ function quantityController:logDecision(isTierActive, reason)
   end
 end
 
----Check if a fluid is below its threshold, but the unit which makes it is admin disabled
+---Check if a fluid is below its threshold, but the unit which makes it needs attention
 ---@return boolean
 ---@private
-function quantityController:isNeedBlocked()
+function quantityController:isNeedBlockedByAttention()
   for index = 1, 9 do
     local controller = self.controllers["t"..tierOf(index)]
 
-    if controller ~= nil and controller.isAdminEnabled == false and self:isBelowThreshold(index) then
+    if controller ~= nil and controller.needsAttention == true and self:isBelowThreshold(index) then
       return true
     end
   end

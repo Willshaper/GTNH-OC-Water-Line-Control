@@ -196,7 +196,7 @@ end
 ---Footer: keys, and what the marks mean
 ---@return string
 local function renderFooter()
-  return "&lightGray;↑↓ scroll   Q quit   &cyan;▶&lightGray; next cycle   &red;✗&lightGray; admin disabled"
+  return "&lightGray;↑↓ scroll   Q quit   &cyan;▶&lightGray; next cycle   &red;✗&lightGray; needs attention"
 end
 
 ---Colour the state of a unit controller
@@ -207,8 +207,8 @@ local function formatState(state)
     return "&lightGray;Idle"
   elseif state == "Wait cycle" then
     return "&white;Waiting"
-  elseif state == "Admin disabled" then
-    return "&red;✗ Admin disabled"
+  elseif state == "Needs attention" then
+    return "&red;✗ Needs attention"
   elseif state == "Unused" then
     return "&gray;Unused"
   end

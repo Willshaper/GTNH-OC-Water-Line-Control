@@ -1,21 +1,21 @@
 ---@class BaseController
 ---@field controllerProxy gt_machine
----@field isAdminEnabled boolean
+---@field needsAttention boolean
 local baseController = {
-  isAdminEnabled = true
+  needsAttention = false
 }
 
----Disable the unit after a fault. The Quantity Controller won't enable it again until it's enabled by hand
-function baseController:adminDisable()
+---Switch the unit off after a fault. The Quantity Controller won't switch it on again until the player does
+function baseController:markNeedsAttention()
   self.controllerProxy.setWorkAllowed(false)
-  self.isAdminEnabled = false
+  self.needsAttention = true
 end
 
----Clear the fault when the unit was enabled by hand. The program never enables a unit after a fault, so only the player can have done it
+---Clear the fault when the unit was switched on by hand. The program never switches a unit on after a fault, so only the player can have done it
 ---@return boolean # true if the fault was cleared
-function baseController:checkAdminReset()
-  if self.isAdminEnabled == false and self.controllerProxy.isWorkAllowed() == true then
-    self.isAdminEnabled = true
+function baseController:checkAttentionCleared()
+  if self.needsAttention == true and self.controllerProxy.isWorkAllowed() == true then
+    self.needsAttention = false
     return true
   end
 

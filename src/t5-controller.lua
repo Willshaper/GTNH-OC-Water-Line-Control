@@ -63,8 +63,8 @@ end
 ---Get current state
 ---@return string
 function t5controller:getCurrentState()
-  if self.isAdminEnabled == false then
-    return "Admin disabled"
+  if self.needsAttention == true then
+    return "Needs attention"
   end
 
   -- A unit that may no longer work still finishes the cycle it is running
@@ -219,7 +219,7 @@ function t5controller:putPlasma()
   )
 
   if result ~= self.plasmaCount then
-    self:adminDisable()
+    self:markNeedsAttention()
     event.push("log_warning", "[T5] Not enough Helium Plasma for craft")
   end
 end
@@ -235,7 +235,7 @@ function t5controller:putCoolant()
   )
 
   if result ~= self.coolantCount then
-    self:adminDisable()
+    self:markNeedsAttention()
     event.push("log_warning", "[T5] Not enough Super Coolant for craft")
   end
 end

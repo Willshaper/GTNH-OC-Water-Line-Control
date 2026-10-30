@@ -91,8 +91,8 @@ end
 ---Get current state
 ---@return string
 function t7controller:getCurrentState()
-  if self.isAdminEnabled == false then
-    return "Admin disabled"
+  if self.needsAttention == true then
+    return "Needs attention"
   end
 
   -- A unit that may no longer work still finishes the cycle it is running
@@ -262,7 +262,7 @@ function t7controller:putInertGas(bits)
   )
 
   if result ~= count then
-    self:adminDisable()
+    self:markNeedsAttention()
     event.push("log_warning", "[T7] Not enough "..inertGas.." for craft")
   end
 end
@@ -278,7 +278,7 @@ function t7controller:putSuperConductor()
   )
 
   if result ~= self.superconductorCount then
-    self:adminDisable()
+    self:markNeedsAttention()
     event.push("log_warning", "[T7] Not enough superconductor for craft")
   end
 end
@@ -294,7 +294,7 @@ function t7controller:putNeutronium()
   )
 
   if result ~= self.neutroniumCount then
-    self:adminDisable()
+    self:markNeedsAttention()
     event.push("log_warning", "[T7] Not enough neutronium for craft")
   end
 end
@@ -310,7 +310,7 @@ function t7controller:putCoolant()
   )
 
   if result ~= self.supercoolantCount then
-    self:adminDisable()
+    self:markNeedsAttention()
     event.push("log_warning", "[T7] Not enough coolant for craft")
   end
 end

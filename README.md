@@ -8,7 +8,7 @@ What the fork adds:
 - The [Quantity Controller](#quantity-controller) with four modes: `disabled`, `multiThread`, `singleThread` and `singleThreadBalancing`.
 - `singleThreadBalancing` fills every water to `floorQty`, then to `minQty`, lowest tier first, then keeps the least-stocked water running. A threshold of 0 means no cap. See [how it picks a unit](#balancing).
 - T1 and T2 modules, so the Clarifier and the Ozonation unit can be switched on and off too.
-- Units that stop because they ran out of materials stay off ("Admin disabled"), so the Quantity Controller never turns them back on. Switch one back on by hand once it's restocked.
+- Units that stop because something is missing stay off ("Needs attention"), so the Quantity Controller never switches them back on. Switch one back on by hand once it's fixed.
 - A coloured screen: each water's stock and threshold, the units the Quantity Controller chose (`▶`), and a countdown to the next cycle.
 - The program switches the Water Purification Plant back on when it starts (`enableAutoStart`), so stopping it to edit `config.lua` no longer leaves the plant off.
 - The log on the screen shows the time, which units the Quantity Controller chose and why, and when a unit or the plant stops.
@@ -59,7 +59,7 @@ And there is also the possibility of auto update at startup.
 - Stock is red under `floorQty`, orange under `minQty` (both only in `singleThreadBalancing`), yellow under its threshold and green at or above it.
 - On the right, a bar shows the stock from 0 to its threshold, in the stock's colour. A water without a cap shows `-` as its threshold, and its bar is scaled to the largest stock.
 - `▶` marks the units the Quantity Controller chose for the next cycle.
-- State: "Working" with the success chance, "Waiting" (switched on, waiting for the next cycle), "Idle" (switched off by the Quantity Controller or by hand), "✗ Admin disabled" (stopped after a fault, see [Quantity Controller](#quantity-controller)) or "Unused" (not enabled in `config.lua`).
+- State: "Working" with the success chance, "Waiting" (switched on, waiting for the next cycle), "Idle" (switched off by the Quantity Controller or by hand), "✗ Needs attention" (stopped after a fault, see [Quantity Controller](#quantity-controller)) or "Unused" (not enabled in `config.lua`).
 - Below the line is the log, see [Configuration](#configuration).
 
 <a id="installation"></a>
@@ -455,7 +455,7 @@ It checks three stages in order, and the first one that applies decides:
 2. **Min** (`minQty`, e.g. 8M): if any water is under min, the **lowest tier** of those runs.
 3. **Least stock**: otherwise the water with the **least stock** runs, until it reaches its threshold (e.g. 32M). A lower tier wins a tie.
 
-Only units that are enabled in `config.lua`, not "Admin disabled", and whose water is under its threshold take part.
+Only units that are enabled in `config.lua`, not marked "Needs attention", and whose water is under its threshold take part.
 Each unit uses the water of the tier below it: when that runs low, it runs fewer parallels that cycle.
 
 Example with a 1M floor, an 8M min and 32M thresholds: with G1 at 500k and G2 at 550k, T1 runs (both are under the floor, T1 is lower).
@@ -473,8 +473,9 @@ Players usually start with few parallels: a higher `minQty` builds a reserve bef
 
 T8 also runs when Stabilised Baryonic Matter is below its threshold. T8 makes it, and it's needed to realign quark catalysts.
 
-A unit that ran out of materials is shown as "Admin disabled", and the Quantity Controller doesn't enable it again.
-Once it's restocked, switch the unit back on by hand (soft mallet, or the button in its GUI): the program then uses it again.
+A unit that ran out of materials, or has another fault such as a wrong lens slot, is shown as "Needs attention", and the Quantity Controller doesn't switch it on again.
+The yellow warning just before it in the log says what is wrong.
+Once it's fixed, switch the unit back on by hand (soft mallet, or the button in its GUI): the program then uses it again.
 In the multi and single thread modes the program switches it off again within a few seconds and keeps it off until it chooses that unit.
 Switched on in the last few seconds of a cycle, it can start once next to the unit the Quantity Controller chose.
 
@@ -570,7 +571,7 @@ logger = {
 
 The log on the screen (`scrollList`) shows the time and what the program does, newest on top. Scroll it with the arrow keys.
 - `[QC] Next cycle: T2 (G2 7.3M, lowest stock)` - the units the Quantity Controller chose, each time the choice changes, and why ("under floor", "under min", "lowest stock").
-- `[T3] Admin disabled until switched on by hand` and `[T3] Enabled by hand, no longer admin disabled`.
+- `[T3] Needs attention, switch it on when fixed` and `[T3] Switched on by hand, back in use`.
 - `[Line] Plant stopped (switched off or no power)` and `[Line] Water Purification Plant switched on`.
 - `[Line] Cycle started: T2` - the units running in each new cycle. This is a `debug` line, set `logLevel = "info"` to keep it off the screen.
   "Cycle started: no units" while a unit was chosen means GregTech didn't start it, usually because an input (water, Ozone, a catalyst) was missing.
@@ -583,4 +584,4 @@ A `scrollList` without `messageFormat` uses `"{Time:%H:%M} {Message}"`.
 ## Credits
 
 - [Navatusein](https://github.com/Navatusein) wrote Water Line Control.
-- [ehami](https://github.com/ehami) wrote the Quantity Controller, the T1 and T2 modules and the Admin disabled state, ported here to the 2.9 version.
+- [ehami](https://github.com/ehami) wrote the Quantity Controller, the T1 and T2 modules and the Needs attention state (called "Admin disabled" there), ported here to the 2.9 version.

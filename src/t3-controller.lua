@@ -54,8 +54,8 @@ end
 ---Get current state
 ---@return string
 function t3controller:getCurrentState()
-  if self.isAdminEnabled == false then
-    return "Admin disabled"
+  if self.needsAttention == true then
+    return "Needs attention"
   end
 
   -- A unit that may no longer work still finishes the cycle it is running
@@ -121,7 +121,7 @@ function t3controller:initStateMachine()
       local amount = type(fluidInTank) == "table" and fluidInTank.amount or 0
 
       if amount < self.requiredCount then
-        self:adminDisable()
+        self:markNeedsAttention()
         event.push("log_warning", "[T3] Not enough Polyaluminium Chloride for craft")
 
         countToAdd = amount - (amount % 100000)

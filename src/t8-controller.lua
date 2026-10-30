@@ -89,8 +89,8 @@ end
 ---Get current state
 ---@return string
 function t8controller:getCurrentState()
-  if self.isAdminEnabled == false then
-    return "Admin disabled"
+  if self.needsAttention == true then
+    return "Needs attention"
   end
 
   -- A unit that may no longer work still finishes the cycle it is running
@@ -245,7 +245,7 @@ function t8controller:putQuarks(index)
     )
 
     if transfered == 0 then
-      self:adminDisable()
+      self:markNeedsAttention()
       event.push("log_warning", "[T8] Not enough quarks on slot: "..self.drops[index][i])
     end
   end
@@ -262,7 +262,7 @@ function t8controller:craftQuarks()
 
       if crafts[1] == nil then
         event.push("log_warning", "[T8] No craft for: "..quark.label)
-        self:adminDisable()
+        self:markNeedsAttention()
         break
       end
 

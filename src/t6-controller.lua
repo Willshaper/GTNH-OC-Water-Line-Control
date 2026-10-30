@@ -54,8 +54,8 @@ end
 ---Get current state
 ---@return string
 function t6controller:getCurrentState()
-  if self.isAdminEnabled == false then
-    return "Admin disabled"
+  if self.needsAttention == true then
+    return "Needs attention"
   end
 
   -- A unit that may no longer work still finishes the cycle it is running
@@ -222,7 +222,7 @@ function t6controller:putLens(lens)
   )
 
   if result ~= 1 then
-    self:adminDisable()
+    self:markNeedsAttention()
     self.stateMachine.data.currentLens = nil
     self.stateMachine:setState("waitEnd")
     event.push("log_warning", "[T6] Invalid slot: "..self.transposerItems[lens].slot.." for: "..lens)

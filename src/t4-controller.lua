@@ -57,8 +57,8 @@ end
 ---Get current state
 ---@return string
 function t4controller:getCurrentState()
-  if self.isAdminEnabled == false then
-    return "Admin disabled"
+  if self.needsAttention == true then
+    return "Needs attention"
   end
 
   -- A unit that may no longer work still finishes the cycle it is running
@@ -208,7 +208,7 @@ function t4controller:putSodiumHydroxide(count)
     )
 
     if result ~= sodiumHydroxideCount then
-      self:adminDisable()
+      self:markNeedsAttention()
       event.push("log_warning", "[T4] Not enough Sodium Hydroxide for craft")
       break
     end
@@ -229,7 +229,7 @@ function t4controller:putHydrochloricAcid(count)
   )
 
   if result ~= hydrochloricAcidCount then
-    self:adminDisable()
+    self:markNeedsAttention()
     event.push("log_warning", "[T4] Not enough Hydrochloric Acid for craft")
   end
 

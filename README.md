@@ -90,11 +90,17 @@ A Tier 3 CPU allows 16, and only a server can hold the Component Bus that adds 1
    A screen or cable touching the rack is not enough: until it is linked, the server only sees its own parts and the screen stays blank.
 2. Install OpenOS on the hard drive: boot from an OpenOS floppy (a Disk Drive mountable in the rack, or a normal computer with a disk drive), run `install` and pick the hard drive.
 3. Run this command to install the fork. It downloads the latest release into `/home`.
-   An existing `config.lua` is kept as `config.old.lua` (or `config.old2.lua` and so on, if that exists).
 
 ```shell
 wget -f https://raw.githubusercontent.com/Willshaper/GTNH-OC-Water-Line-Control/develop/setup.lua && setup
 ```
+
+If there is a `config.lua` already, your values are carried into the new one, with its new settings and comments, and the installer lists what changed.
+A new setting that means something when it is left out gets the value that keeps what the program did: a missing `floorQty` becomes `0` (no floor stage), not the default.
+Your old file is kept as `config.old.lua` (or `config.old2.lua` and so on). If your file can't be read, it stays as it is and the new one is saved as `config.default.lua`.
+
+The installer then asks whether to start Water Line Control when the computer boots, and, with a Redstone Card in the computer,
+whether a redstone signal should turn the computer on (see below).
 
 The installer of the original program (`pastebin run ESUAMAGx`) installs the original, without the Quantity Controller.
 
@@ -104,15 +110,25 @@ To start the program, run:
 main
 ```
 
-To start it whenever the computer boots, add it to `/home/.shrc`:
+To start it whenever the computer boots, answer yes to the installer's question, or add it to `/home/.shrc` yourself:
 
 ```shell
 echo 'cd /home && main' >> /home/.shrc
 ```
 
-To turn the server back on after a power loss, put a Redstone Card in it, run `lua` and enter `component.redstone.setWakeThreshold(1)` (the card remembers it).
+To turn the server back on after a power loss, put a Redstone Card in it and answer yes to the installer's question
+(or run `lua` and enter `component.redstone.setWakeThreshold(1)`; the card remembers it).
 Then wire a slow redstone clock (one pulse every 30 to 60 seconds) to the Server Rack. Each pulse turns the server on if it is off, and it starts the program with the line above.
 Keep the clock away from the screen: a redstone pulse turns an OpenComputers screen off and on.
+
+#### Updating and removing
+
+With `enableAutoUpdate = true`, the program checks for a new version when it starts and asks before installing it.
+You can also stop it (Q) and run `update`: it shows the installed and the newest version, and asks before installing.
+Both keep your values in the new `config.lua`, as described above.
+
+`uninstall` removes the files Water Line Control installed (listed in `/home/waterline.files`), and leaves other programs in `/home` alone.
+It asks before removing `config.lua`, removes its auto-start line, and asks whether to turn off wake on redstone.
 
 #### When something goes wrong
 
@@ -447,7 +463,7 @@ In the single thread modes, every unit of the line needs its module, or the unit
 
 #### Modes
 
-Write the mode exactly as below: the names are case-sensitive, so `SingleThreadBalancing` is refused.
+The names can be written in any case, so `SingleThreadBalancing` works too. A misspelled mode is refused, and the error lists the valid ones.
 
 - `"disabled"` - No quantity control. Every enabled unit runs every cycle, like the original program.
 - `"multiThread"` - Every tier below its threshold runs.

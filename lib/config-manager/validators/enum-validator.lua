@@ -43,19 +43,35 @@ function enumValidator:validate(value, config)
     return false, self.checker.message or ("didn't pass the checker")
   end
 
+  -- Any case is accepted: "SingleThreadBalancing" is "singleThreadBalancing"
   for _, enumValue in pairs(self.values) do
-    if value == enumValue then
+    if value:lower() == enumValue:lower() then
       return true, nil
     end
   end
 
-  return false, "invalid value: " .. value
+  local names = {}
+
+  for _, enumValue in pairs(self.values) do
+    table.insert(names, '"'..enumValue..'"')
+  end
+
+  return false, "invalid value: \""..value.."\", use one of: "..table.concat(names, ", ")
 end
 
 ---Factory
 ---@param value string
 ---@return string
 function enumValidator:factory(value)
+  -- The value as listed, whatever case it was written in
+  if type(value) == "string" then
+    for _, enumValue in pairs(self.values) do
+      if value:lower() == enumValue:lower() then
+        return enumValue
+      end
+    end
+  end
+
   return value
 end
 

@@ -43,15 +43,28 @@ function typedObjectListValidator:validate(value, config)
     return false, self.checker.message or "didn't pass the checker"
   end
 
-  for objectIndex, object in ipairs(value) do
+  -- pairs, not ipairs: the objects are usually keyed by name, like ["file"]
+  for objectKey, object in pairs(value) do
+    if type(object) ~= "table" then
+      return false, "("..tostring(objectKey)..") invalid type expected: table"
+    end
+
     if object.type ~= nil and self.templates[object.type] ~= nil then
       local isValid, message = self.templates[object.type]:validate(object, config)
 
       if isValid == false then
-        return false, "("..objectIndex..") "..message
+        return false, "("..tostring(objectKey)..") "..message
       end
     else
-      return false, "invalid type: "..(object.type or "nil")
+      local names = {}
+
+      for name in pairs(self.templates) do
+        table.insert(names, '"'..name..'"')
+      end
+
+      table.sort(names)
+
+      return false, "("..tostring(objectKey)..") unknown type: "..tostring(object.type)..", use one of: "..table.concat(names, ", ")
     end
   end
 

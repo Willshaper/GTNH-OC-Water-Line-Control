@@ -61,6 +61,42 @@ local function readWithTimeout(timeout)
   end
 end
 
+---@param path string
+---@return string|nil
+local function readFile(path)
+  local file = io.open(path, "r")
+
+  if not file then
+    return nil
+  end
+
+  local text = file:read("*a")
+  file:close()
+
+  return text
+end
+
+---@param path string
+---@param text string
+local function writeFile(path, text)
+  local file = assert(io.open(path, "w"))
+  file:write(text)
+  file:close()
+end
+
+---config.old.lua, or config.old2.lua, ... if that is taken
+---@return string
+local function backupName()
+  local name, number = "config.old.lua", 1
+
+  while filesystem.exists("/home/"..name) do
+    number = number + 1
+    name = "config.old"..number..".lua"
+  end
+
+  return name
+end
+
 ---@class ProgramUpdater
 ---@field program Program
 ---@field interval number
@@ -118,8 +154,7 @@ function programUpdater:autoUpdate()
   term.write("Find new version: "..remoteVersion.programVersion.."\n\n")
 
   if isConfigUpdateNeeded then
-    term.write("This update changes the format of the configuration file.\n")
-    term.write("It will be necessary to manually overwrite the configuration file.\n\n")
+    term.write("This update changes config.lua. Your values are carried into the new one.\n\n")
   end
 
   if isSetupUpdateNeeded then
@@ -147,30 +182,16 @@ function programUpdater:autoUpdate()
   term.clear()
   term.write("Updating to version: "..remoteVersion.programVersion.."\n")
 
-  self:downloadAndInstall(url)
+  local lines = self:downloadAndInstall(url)
 
-  if isConfigUpdateNeeded then
-    event.push("log_warning", "[Autoupdate] The format of the configs has been updated. It is necessary to manually rewrite the configuration file.");
-
-    term.write("The format of the configs has been updated. It is necessary to manually rewrite the configuration file.\n")
-    term.write("After rewriting the configuration file, do not forget to restart your computer.\n")
-    term.write("Press [Enter] to confirm")
-
-    term.read()
-  else
-    shell.execute("mv config.old.lua config.lua")
+  for _, line in ipairs(lines) do
+    term.write(line.."\n")
   end
 
-  term.clear()
-  term.write("Update completed\n")
-  os.sleep(3)
+  term.write("\nUpdate completed. Press Enter to restart (or wait 30 s)\n")
+  readWithTimeout(30)
 
-  if isConfigUpdateNeeded == false then
-    computer.shutdown(true)
-    return
-  end
-
-  self.program:exit()
+  computer.shutdown(true)
 end
 
 ---Get latest version number
@@ -245,10 +266,49 @@ end
 ---@private
 function programUpdater:downloadAndInstall(url)
   shell.setWorkingDirectory("/home")
-  shell.execute("mv config.lua config.old.lua")
-  shell.execute("wget -fq "..url.." program.tar")
-  shell.execute("tar -xf program.tar")
-  shell.execute("rm program.tar")
+
+  -- The player's config.lua is copied before the archive replaces it with the new one
+  local oldText = readFile("/home/config.lua")
+  local backup = nil
+
+  if oldText ~= nil then
+    backup = backupName()
+    writeFile("/home/"..backup, oldText)
+  end
+
+  shell.execute("wget -fq "..url.." /tmp/waterline.tar")
+  shell.execute("tar -xf /tmp/waterline.tar")
+  shell.execute("rm /tmp/waterline.tar")
+
+  if oldText == nil then
+    return {}
+  end
+
+  local newText = readFile("/home/config.lua") or ""
+  local isLoaded, merger = pcall(dofile, "/home/lib/program-controller/config-merger.lua")
+  local merged, report = nil, "the merger couldn't be loaded"
+
+  if isLoaded then
+    merged, report = merger.merge(oldText, newText)
+  end
+
+  if merged == nil then
+    writeFile("/home/config.default.lua", newText)
+    writeFile("/home/config.lua", oldText)
+
+    return {"Kept your config.lua as it was: "..tostring(report), "The new one is config.default.lua."}
+  end
+
+  writeFile("/home/config.lua", merged)
+  filesystem.remove("/home/config.default.lua")
+
+  local lines = {"Your settings are in the new config.lua (your old file is "..backup.."):"}
+
+  for _, line in ipairs(merger.describe(report)) do
+    table.insert(lines, "  "..line)
+  end
+
+  return lines
 end
 
 return classBuilder.createClass(programUpdater, programUpdater.constructor, "ProgramUpdater")

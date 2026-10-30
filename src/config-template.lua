@@ -41,9 +41,10 @@ end
 ---@param config table
 ---@return boolean
 local function isQuantityControlDisabled(value, config)
-  local activeModes = {multiThread = true, singleThread = true, singleThreadBalancing = true}
+  local activeModes = {multithread = true, singlethread = true, singlethreadbalancing = true}
+  local mode = type(config.quantityController) == "table" and config.quantityController.controlMode
 
-  return type(config.quantityController) ~= "table" or activeModes[config.quantityController.controlMode] ~= true
+  return type(mode) ~= "string" or activeModes[mode:lower()] ~= true
 end
 
 ---Amount validator for water thresholds

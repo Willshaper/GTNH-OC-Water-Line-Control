@@ -460,7 +460,7 @@ local function restartReasons(oldRaw, newRaw)
     table.insert(reasons, "ME interface address")
   end
 
-  if (oldQc.controlMode == "disabled") ~= (newQc.controlMode == "disabled") then
+  if (tostring(oldQc.controlMode):lower() == "disabled") ~= (tostring(newQc.controlMode):lower() == "disabled") then
     table.insert(reasons, "Quantity Controller on or off")
   end
 

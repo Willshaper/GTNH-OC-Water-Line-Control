@@ -10,7 +10,8 @@ local repository = "Willshaper/GTNH-OC-Water-Line-Control"
 local branch = "develop"
 local archiveName = "WaterLineControl"
 local home = "/home"
-local archive = "/tmp/waterline.tar"
+-- Not in /tmp: OpenOS keeps /tmp in memory, 64 KB by default, which is too small for the release
+local archive = "/home/waterline-update.tar"
 
 local tarManUrl = "https://raw.githubusercontent.com/Navatusein/GTNH-OC-Installer/refs/heads/main/tar/tar.man"
 local tarBinUrl = "https://raw.githubusercontent.com/Navatusein/GTNH-OC-Installer/refs/heads/main/tar/tar.lua"
@@ -167,6 +168,13 @@ end
 shell.setWorkingDirectory(home)
 shell.execute("tar -xf "..archive)
 filesystem.remove(archive)
+
+-- A download that stopped early unpacks only part of the files
+local isInstalled, installed = pcall(dofile, home.."/version.lua")
+
+if not isInstalled or type(installed) ~= "table" or installed.programVersion ~= version.programVersion then
+  io.stderr:write("The download was incomplete, so some files are missing or cut off. Run setup again.\n")
+end
 
 if oldText ~= nil then
   local newText = readFile(home.."/config.lua") or ""

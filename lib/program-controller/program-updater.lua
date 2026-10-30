@@ -182,7 +182,7 @@ function programUpdater:autoUpdate()
   term.clear()
   term.write("Updating to version: "..remoteVersion.programVersion.."\n")
 
-  local lines = self:downloadAndInstall(url)
+  local lines = self:downloadAndInstall(url, remoteVersion.programVersion)
 
   for _, line in ipairs(lines) do
     term.write(line.."\n")
@@ -264,7 +264,7 @@ end
 ---Download and install latest version
 ---@param url string
 ---@private
-function programUpdater:downloadAndInstall(url)
+function programUpdater:downloadAndInstall(url, expectedVersion)
   shell.setWorkingDirectory("/home")
 
   -- The player's config.lua is copied before the archive replaces it with the new one
@@ -276,12 +276,22 @@ function programUpdater:downloadAndInstall(url)
     writeFile("/home/"..backup, oldText)
   end
 
-  shell.execute("wget -fq "..url.." /tmp/waterline.tar")
-  shell.execute("tar -xf /tmp/waterline.tar")
-  shell.execute("rm /tmp/waterline.tar")
+  -- Not in /tmp: OpenOS keeps /tmp in memory, 64 KB by default, which is too small for the release
+  shell.execute("wget -fq "..url.." /home/waterline-update.tar")
+  shell.execute("tar -xf /home/waterline-update.tar")
+  shell.execute("rm /home/waterline-update.tar")
+
+  -- A download that stopped early unpacks only part of the files
+  local warnings = {}
+  local isInstalled, installed = pcall(dofile, "/home/version.lua")
+
+  if expectedVersion ~= nil and (not isInstalled or type(installed) ~= "table" or installed.programVersion ~= expectedVersion) then
+    table.insert(warnings, "The download was incomplete, so some files are missing or cut off.")
+    table.insert(warnings, "Run setup again: wget -f https://raw.githubusercontent.com/"..self.program.repository.."/develop/setup.lua && setup")
+  end
 
   if oldText == nil then
-    return {}
+    return warnings
   end
 
   local newText = readFile("/home/config.lua") or ""
@@ -296,13 +306,17 @@ function programUpdater:downloadAndInstall(url)
     writeFile("/home/config.default.lua", newText)
     writeFile("/home/config.lua", oldText)
 
-    return {"Kept your config.lua as it was: "..tostring(report), "The new one is config.default.lua."}
+    table.insert(warnings, "Kept your config.lua as it was: "..tostring(report))
+    table.insert(warnings, "The new one is config.default.lua.")
+
+    return warnings
   end
 
   writeFile("/home/config.lua", merged)
   filesystem.remove("/home/config.default.lua")
 
-  local lines = {"Your settings are in the new config.lua (your old file is "..backup.."):"}
+  local lines = warnings
+  table.insert(lines, "Your settings are in the new config.lua (your old file is "..backup.."):")
 
   for _, line in ipairs(merger.describe(report)) do
     table.insert(lines, "  "..line)

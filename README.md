@@ -108,6 +108,18 @@ To start it whenever the computer boots, add it to `/home/.shrc`:
 echo main >> /home/.shrc
 ```
 
+To turn the server back on after a power loss, put a Redstone Card in it, run `lua` and enter `component.redstone.setWakeThreshold(1)` (the card remembers it).
+Then wire a slow redstone clock (one pulse every 30 to 60 seconds) to the Server Rack. Each pulse turns the server on if it is off, and it starts the program with the line above.
+Keep the clock away from the screen: a redstone pulse turns an OpenComputers screen off and on.
+
+#### When something goes wrong
+
+If an error stops the program, for example a unit that can't be read while its chunk reloads, or a mistake in `config.lua`,
+it shows the error, waits 30 seconds and starts again. The plant keeps running in the meantime, and units that need attention stay off.
+If it still fails after 5 minutes, it switches the plant off and stops: fix the problem, then run `main`.
+
+Press Q to stop the program at any time. This switches the plant off too.
+
 > [!NOTE]  
 > For convenient configuration you can use the web configurator.
 > [GTNH-OC-Web-Configurator](https://navatusein.github.io/GTNH-OC-Web-Configurator/#/configurator?url=https%3A%2F%2Fraw.githubusercontent.com%2FWillshaper%2FGTNH-OC-Water-Line-Control%2Frefs%2Fheads%2Fdevelop%2Fconfig-descriptor.yml)

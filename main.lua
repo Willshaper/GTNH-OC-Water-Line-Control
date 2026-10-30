@@ -9,23 +9,37 @@ local simpleGui = require("lib.simple-gui.index")
 
 local configTemplate = require("src.config-template")
 local lineControllerClass = require("src.line-controller")
+local listeners = require("src.listeners")
 local scrollList = require("src.gui-widgets.scroll-list")
 local formatAmount = require("src.format-amount")
 
-package.loaded.config = nil
-local config = require("config")
 local version = require("version")
 
----@type Config
-local config = configManager.manager:new(configTemplate):build(config)
+---Read config.lua and build it. A mistake in it is an error, which the program shows and retries
+---@return Config
+local function loadConfig()
+  package.loaded.config = nil
+  return configManager.manager:new(configTemplate):build(require("config"))
+end
+
+-- Only to know whether to update at the start. A broken config.lua is reported when the program starts
+package.loaded.config = nil
+local isConfigReadable, rawConfig = pcall(require, "config")
+local enableAutoUpdate = not (isConfigReadable and type(rawConfig) == "table" and rawConfig.enableAutoUpdate == false)
 
 local repository = "Willshaper/GTNH-OC-Water-Line-Control"
 local archiveName = "WaterLineControl"
 
-local program = programController.program:new(config.enableAutoUpdate, version, repository, archiveName)
+local program = programController.program:new(enableAutoUpdate, version, repository, archiveName)
 local gui = simpleGui.gui:new(program)
 
-local lineController = lineControllerClass:new()
+---@type Config
+local config = nil
+
+---@type LineController
+local lineController = nil
+
+local isStarted = false
 
 local logo = {
   "__        __    _              _     _               ____            _             _ ",
@@ -85,23 +99,63 @@ local gaugeWidth = 16
 
 local controllersStates = {}
 
-for i = 1, 8, 1 do
-  local key = "t"..i
+---Keep what the previous run knew when the program starts again after an error:
+---the log on the screen, and the units that need attention
+---@param oldConfig Config
+---@param newConfig Config
+local function carryOver(oldConfig, newConfig)
+  local oldLog = oldConfig.logger.handlers["scrollList"]
+  local newLog = newConfig.logger.handlers["scrollList"]
 
-  if config.controllers[key] ~= nil then
-    controllersStates[key] = "Loading"
-  else
-    controllersStates[key] = "Unused"
+  if oldLog ~= nil and newLog ~= nil then
+    newLog.logs = oldLog.logs
+    newLog.lastMessage = oldLog.lastMessage
+    newLog.repeatCount = oldLog.repeatCount
   end
+
+  for tier = 1, 8 do
+    local key = "t"..tier
+    local oldController = oldConfig.controllers[key]
+    local newController = newConfig.controllers[key]
+
+    if oldController ~= nil and newController ~= nil and oldController.needsAttention == true then
+      newController.needsAttention = true
+      newConfig.quantityController.isAttentionLogged[tier] = oldConfig.quantityController.isAttentionLogged[tier]
+    end
+  end
+
+  oldConfig.logger:stop()
 end
 
 local function init()
+  local newConfig = loadConfig()
+
+  if config ~= nil then
+    carryOver(config, newConfig)
+  end
+
+  config = newConfig
+
+  for i = 1, 8, 1 do
+    local key = "t"..i
+
+    if config.controllers[key] ~= nil then
+      controllersStates[key] = "Loading"
+    else
+      controllersStates[key] = "Unused"
+    end
+  end
+
   gui:setTemplate(mainTemplate)
 
   term.clear()
 
-  event.push("log_info", "Program started, QC mode "..config.quantityController.controlMode)
+  if isStarted == false then
+    event.push("log_info", "Program started, QC mode "..config.quantityController.controlMode)
+    isStarted = true
+  end
 
+  lineController = lineControllerClass:new()
   lineController:init(config.controllers)
 
   for i = 1, 8, 1 do
@@ -333,12 +387,24 @@ local function guiLoop()
   gui:render(values)
 end
 
+---A run stops: after an error, or before exiting. The plant is left as it is
+local function onStop()
+  listeners.cancelAll()
+end
+
 local function onExit()
-  lineController:disable()
+  if lineController ~= nil then
+    lineController:disable()
+  end
+
+  if config ~= nil then
+    config.logger:stop()
+  end
 end
 
 program:registerLogo(logo)
 program:registerOnInit(init)
+program:registerOnStop(onStop)
 program:registerOnExit(onExit)
 program:registerThread(loop)
 program:registerTimer(guiLoop, math.huge, 1)

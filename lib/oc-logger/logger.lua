@@ -9,6 +9,7 @@ local logLevels = {debug = 0, info = 1, warning = 2, error = 3}
 ---@class Logger
 ---@field timeCorrection number
 ---@field handlers table<string, LoggerHandler>
+---@field listenerIds number[]
 local logger = {}
 
 ---@return Logger
@@ -19,24 +20,28 @@ function logger:constructor(name, timeZone, handlers)
   self.timeCorrection = timeZone * 3600
   self.name = name
   self.handlers = handlers
+  self.listenerIds = {}
 
-  event.listen("log_debug", function (_, ...)
-    self:debug(...)
-  end)
+  for _, level in ipairs({"debug", "info", "warning", "error"}) do
+    local id = event.listen("log_"..level, function (_, ...)
+      self:log(level, ...)
+    end)
 
-  event.listen("log_info", function (_, ...)
-    self:info(...)
-  end)
-
-  event.listen("log_warning", function (_, ...)
-    self:warning(...)
-  end)
-
-  event.listen("log_error", function (_, ...)
-    self:error(...)
-  end)
+    if id then
+      table.insert(self.listenerIds, id)
+    end
+  end
 
   return self
+end
+
+---Stop listening to log events. OpenOS keeps a program's listeners after it ends
+function logger:stop()
+  for _, id in ipairs(self.listenerIds) do
+    event.cancel(id)
+  end
+
+  self.listenerIds = {}
 end
 
 ---Format logger message

@@ -5,6 +5,7 @@ local classBuilder = require("lib.class-builder.index")
 local componentDiscover = require("lib.component-discover.index")
 
 local formatAmount = require("src.format-amount")
+local listeners = require("src.listeners")
 
 ---Fluids read from the ME network. Index 9 (Stabilised Baryonic Matter) is made by T8
 local fluidNames = {
@@ -84,7 +85,7 @@ function quantityController:init(controllers)
   self.meInterfaceProxy = componentDiscover.proxy(self.meInterfaceAddress, "me_interface", "[QC] ME Interface")
   self:checkSettings()
 
-  event.listen("cycle_pre_end", function (_, isLate)
+  listeners.listen("cycle_pre_end", function (_, isLate)
     if isLate == true then
       event.push("log_debug", "[QC] Cycle end seen late, the units chosen now start one cycle later")
     end

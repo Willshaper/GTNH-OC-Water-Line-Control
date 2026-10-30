@@ -1,23 +1,39 @@
 local event = require("event")
 local thread = require("thread")
 local component = require("component")
+local computer = require("computer")
 local keyboard = require("keyboard")
 local term = require("term")
 
 local classBuilder = require("lib.class-builder.index")
 local programUpdater = require("lib.program-controller.program-updater")
 
----Try Catch
+---Try Catch. An error is pushed as "program_error" with the run it happened in, so the program can recover
 ---@param callback function
+---@param runId? integer
 ---@return function
-local function try(callback)
+local function try(callback, runId)
   return function(...)
     local result = table.pack(xpcall(callback, debug.traceback, ...))
     if not result[1] then
-      event.push("exit", result[2])
+      event.push("program_error", result[2], runId)
     end
-    return table.unpack(result, 2)
+    return table.unpack(result, 2, result.n)
   end
+end
+
+---Only "exit" and "program_error". event.pull matches names as patterns, so "exit" would also catch "thread_exit"
+---@param name any
+---@return boolean
+local function isProgramSignal(name)
+  return name == "exit" or name == "program_error"
+end
+
+---Get the first line of an error
+---@param message any
+---@return string
+local function firstLine(message)
+  return (tostring(message):match("^[^\n]*"))
 end
 
 ---@class Program
@@ -27,7 +43,14 @@ end
 ---@field archiveName? string
 ---@field debug boolean
 ---@field coroutines table
+---@field running table
 ---@field keyHandlers table<number, fun()>
+---@field keyListener? number
+---@field runId integer
+---@field runStartedAt number
+---@field failingSince? number
+---@field retrySeconds number
+---@field giveUpSeconds number
 ---@field defaultLoopInterval number
 ---@field defaultWidth number
 ---@field defaultHeight number
@@ -35,6 +58,7 @@ end
 ---@field defaultBackground number
 ---@field logo? string[]
 ---@field onInit? fun()
+---@field onStop? fun()
 ---@field onExit? fun()
 ---@field updater ProgramUpdater
 local program = {}
@@ -53,7 +77,17 @@ function program:constructor(enableAutoUpdate, version, repository, archiveName)
 
   self.debug = false
   self.coroutines = {}
+  self.running = {}
   self.keyHandlers = {}
+  self.keyListener = nil
+
+  self.runId = 0
+  self.runStartedAt = 0
+  self.failingSince = nil
+
+  -- After an error the program starts again after retrySeconds. It gives up when it is still failing after giveUpSeconds
+  self.retrySeconds = 30
+  self.giveUpSeconds = 300
 
   self.defaultLoopInterval = 1/20
   self.defaultWidth = 0
@@ -64,6 +98,7 @@ function program:constructor(enableAutoUpdate, version, repository, archiveName)
   self.logo = nil
 
   self.onInit = nil
+  self.onStop = nil
   self.onExit = nil
 
   self.updater = programUpdater:new(self)
@@ -77,10 +112,16 @@ function program:registerLogo(logo)
   self.logo = logo
 end
 
----Register onInit function
+---Register onInit function. It runs at the start, and again when the program starts again after an error
 ---@param callback function
 function program:registerOnInit(callback)
   self.onInit = callback
+end
+
+---Register onStop function. It runs when a run of the program stops, after an error and before onExit
+---@param callback function
+function program:registerOnStop(callback)
+  self.onStop = callback
 end
 
 ---Register onExit function
@@ -149,27 +190,12 @@ function program:start()
     self:registerTimer(self.updater:checkUpdateTimer())
   end
 
-  if self.onInit then
-    try(self.onInit)()
-  end
-
-  for i = 1, #self.coroutines do
-    local coroutine = self.coroutines[i]
-
-    if coroutine.type == "timer" then
-      self.coroutines[i] = event.timer(coroutine.interval, try(coroutine.callback), coroutine.times)
-    elseif coroutine.type == "thread" then
-      self.coroutines[i] = thread.create(try(coroutine.callback))
-      self.coroutines[i]:detach()
-    end
-  end
-
   self:registerKeyHandler(keyboard.keys.q, function()
     event.push("exit")
   end)
 
-  table.insert(self.coroutines, event.listen("key_up", try(function (_, address, char, keyCode)
-    if self.debug == true then 
+  self.keyListener = event.listen("key_up", try(function (_, address, char, keyCode)
+    if self.debug == true then
       event.push("log_debug", "Pressed ["..string.char(char).."]: "..keyCode.."\n")
     end
 
@@ -180,21 +206,166 @@ function program:start()
 
       self.keyHandlers[keyCode]()
     end
-  end)))
+  end))
 
-  local _, exception = event.pull("exit")
-  self:exit(exception)
+  self:runUntilExit()
+end
+
+---Run the program, start it again after an error, and exit on Q or when it keeps failing
+---@private
+function program:runUntilExit()
+  local isRunning, problem = self:startRun()
+
+  while true do
+    if isRunning then
+      local name, message, runId = event.pullFiltered(isProgramSignal)
+
+      if name == "exit" then
+        self:exit(message)
+        return
+      end
+
+      -- An error from a run that already stopped is ignored
+      if runId == nil or runId == self.runId then
+        -- A run that went well for a while starts a new count
+        if computer.uptime() - self.runStartedAt >= self.giveUpSeconds then
+          self.failingSince = nil
+        end
+
+        self:stopRun()
+        isRunning, problem = false, message
+      end
+    else
+      local now = computer.uptime()
+      self.failingSince = self.failingSince or now
+      local giveUpIn = self.giveUpSeconds - (now - self.failingSince)
+
+      if giveUpIn <= 0 then
+        event.push("log_error", "[Program] Still failing after "..math.floor(self.giveUpSeconds / 60).." min, stopping")
+        self:exit(problem)
+        return
+      end
+
+      event.push("log_error", "[Program] Error, restarting in "..self.retrySeconds.."s: "..firstLine(problem))
+      self:showError(problem, giveUpIn)
+
+      if self:waitForExit(self.retrySeconds) then
+        self:exit()
+        return
+      end
+
+      isRunning, problem = self:startRun()
+
+      if isRunning then
+        event.push("log_warning", "[Program] Started again after an error")
+      end
+    end
+  end
+end
+
+---Start a run: onInit, then the timers and threads
+---@return boolean isRunning
+---@return string? problem
+---@private
+function program:startRun()
+  self.runId = self.runId + 1
+  self.runStartedAt = computer.uptime()
+
+  if self.onInit then
+    local isOk, problem = xpcall(self.onInit, debug.traceback)
+
+    if not isOk then
+      self:stopRun()
+      return false, problem
+    end
+  end
+
+  for _, descriptor in ipairs(self.coroutines) do
+    if descriptor.type == "timer" then
+      table.insert(self.running, event.timer(descriptor.interval, try(descriptor.callback, self.runId), descriptor.times))
+    elseif descriptor.type == "thread" then
+      local handle = thread.create(try(descriptor.callback, self.runId))
+      handle:detach()
+      table.insert(self.running, handle)
+    end
+  end
+
+  return true, nil
+end
+
+---Stop the timers and threads of a run, then onStop
+---@private
+function program:stopRun()
+  for _, handle in ipairs(self.running) do
+    if type(handle) == "table" and handle.kill then
+      handle:kill()
+    elseif type(handle) == "number" then
+      event.cancel(handle)
+    end
+  end
+
+  self.running = {}
+
+  if self.onStop then
+    pcall(self.onStop)
+  end
+end
+
+---Wait, and return true if Q was pressed
+---@param seconds number
+---@return boolean
+---@private
+function program:waitForExit(seconds)
+  local deadline = computer.uptime() + seconds
+
+  while computer.uptime() < deadline do
+    local name = event.pullFiltered(deadline - computer.uptime(), isProgramSignal)
+
+    if name == "exit" then
+      return true
+    end
+  end
+
+  return false
+end
+
+---Show an error and when the program starts again
+---@param problem any
+---@param giveUpIn number
+---@private
+function program:showError(problem, giveUpIn)
+  component.gpu.freeAllBuffers()
+  component.gpu.setResolution(self.defaultWidth, self.defaultHeight)
+  component.gpu.setForeground(0xFF5555)
+  component.gpu.setBackground(self.defaultBackground)
+  term.clear()
+
+  term.write("Error, starting again in "..self.retrySeconds.."s.\n")
+  term.write("If it still fails in "..math.ceil(giveUpIn / 60).." min, it switches the plant off and stops.\n")
+  term.write("Press Q to stop now.\n\n")
+
+  local lineCount = 0
+
+  for line in tostring(problem):gmatch("[^\n]+") do
+    term.write(line.."\n")
+    lineCount = lineCount + 1
+
+    if lineCount >= 8 then
+      break
+    end
+  end
+
+  component.gpu.setForeground(self.defaultForeground)
 end
 
 ---Program exit
 ---@param exception any
 function program:exit(exception)
-  for _, coroutine in pairs(self.coroutines) do
-    if type(coroutine) == "table" and coroutine.kill then
-      coroutine:kill()
-    elseif type(coroutine) == "number" then
-      event.cancel(coroutine)
-    end
+  self:stopRun()
+
+  if self.keyListener then
+    event.cancel(self.keyListener)
+    self.keyListener = nil
   end
 
   component.gpu.freeAllBuffers()
@@ -204,13 +375,19 @@ function program:exit(exception)
 
   term.clear()
 
+  if exception then
+    event.push("log_error", exception)
+  end
+
+  -- Hand out the log lines while the logger still listens; onExit stops it
+  os.sleep(0)
+
   if self.onExit then
-    try(self.onExit)()
+    pcall(self.onExit)
   end
 
   if exception then
-    io.stderr:write(exception)
-    event.push("log_error", exception);
+    io.stderr:write(tostring(exception))
     os.exit(1)
   else
     os.exit(0)

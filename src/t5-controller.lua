@@ -8,6 +8,7 @@ local stateMachineBuilder = require("lib.state-machine-builder.index")
 local gtSensorParser = require("lib.gt-sensor-parser.index")
 
 local baseController = require("src.base-controller")
+local listeners = require("src.listeners")
 
 ---@class T5ControllerData
 ---@field iterations integer
@@ -183,7 +184,7 @@ function t5controller:initStateMachine()
 
   self.stateMachine:createState("waitEnd", "Wait End")
 
-  event.listen("cycle_end", function ()
+  listeners.listen("cycle_end", function ()
     if self.stateMachine:getCurrentStateKey() == "waitEnd" then
       self.stateMachine:setState("idle")
     end

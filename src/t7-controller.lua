@@ -8,6 +8,7 @@ local stateMachineBuilder = require("lib.state-machine-builder.index")
 local gtSensorParser = require("lib.gt-sensor-parser.index")
 
 local baseController = require("src.base-controller")
+local listeners = require("src.listeners")
 
 ---Parse bit string to bits array
 ---@param bitString string
@@ -208,7 +209,7 @@ function t7controller:initStateMachine()
 
   self.stateMachine:createState("waitEnd", "Wait End")
 
-  event.listen("cycle_end", function ()
+  listeners.listen("cycle_end", function ()
     if self.stateMachine:getCurrentStateKey() == "waitEnd" then
       self.stateMachine:setState("idle")
     end

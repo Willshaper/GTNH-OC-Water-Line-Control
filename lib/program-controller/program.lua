@@ -22,11 +22,11 @@ local function try(callback, runId)
   end
 end
 
----Only "exit" and "program_error". event.pull matches names as patterns, so "exit" would also catch "thread_exit"
+---Only the program's own signals. event.pull matches names as patterns, so "exit" would also catch "thread_exit"
 ---@param name any
 ---@return boolean
 local function isProgramSignal(name)
-  return name == "exit" or name == "program_error"
+  return name == "exit" or name == "program_error" or name == "program_edit"
 end
 
 ---Get the first line of an error
@@ -81,6 +81,9 @@ end
 ---@field running table
 ---@field keyHandlers table<number, fun()>
 ---@field keyListener? number
+---@field errorListener? number
+---@field pendingErrors table[]
+---@field isEditing boolean
 ---@field runId integer
 ---@field runStartedAt number
 ---@field failingSince? number
@@ -100,6 +103,7 @@ end
 ---@field onError? fun(problem: any)
 ---@field onRecovered? fun()
 ---@field onGiveUp? fun(problem: any)
+---@field onEdit? fun(isRunning: boolean): string|nil
 ---@field updater ProgramUpdater
 local program = {}
 
@@ -120,6 +124,9 @@ function program:constructor(enableAutoUpdate, version, repository, archiveName)
   self.running = {}
   self.keyHandlers = {}
   self.keyListener = nil
+  self.errorListener = nil
+  self.pendingErrors = {}
+  self.isEditing = false
 
   self.runId = 0
   self.runStartedAt = 0
@@ -145,6 +152,7 @@ function program:constructor(enableAutoUpdate, version, repository, archiveName)
   self.onError = nil
   self.onRecovered = nil
   self.onGiveUp = nil
+  self.onEdit = nil
 
   self.updater = programUpdater:new(self)
 
@@ -184,6 +192,13 @@ function program:registerOnErrors(onError, onRecovered, onGiveUp)
   self.onError = onError
   self.onRecovered = onRecovered
   self.onGiveUp = onGiveUp
+end
+
+---Register the function that edits the config while the program runs (or waits after an error).
+---It returns "restart" when the program should start again with the new config
+---@param callback fun(isRunning: boolean): string|nil
+function program:registerOnEdit(callback)
+  self.onEdit = callback
 end
 
 ---Register timer
@@ -250,7 +265,17 @@ function program:start()
     event.push("exit")
   end)
 
+  -- Errors are collected by a listener: while the editor runs, it takes the signals, so they wouldn't reach the loop below
+  self.errorListener = event.listen("program_error", function (_, message, runId)
+    table.insert(self.pendingErrors, {message = message, runId = runId})
+  end)
+
   self.keyListener = event.listen("key_up", try(function (_, address, char, keyCode)
+    -- Keys typed in the editor are not the program's
+    if self.isEditing then
+      return
+    end
+
     if self.debug == true then
       event.push("log_debug", "Pressed ["..string.char(char).."]: "..keyCode.."\n")
     end
@@ -274,15 +299,9 @@ function program:runUntilExit()
 
   while true do
     if isRunning then
-      local name, message, runId = event.pullFiltered(isProgramSignal)
+      local pendingProblem = self:takeError()
 
-      if name == "exit" then
-        self:exit(message)
-        return
-      end
-
-      -- An error from a run that already stopped is ignored
-      if runId == nil or runId == self.runId then
+      if pendingProblem ~= nil then
         -- A run that went well for a while starts a new count
         if computer.uptime() - self.runStartedAt >= self.giveUpSeconds then
           self.failingSince = nil
@@ -290,7 +309,18 @@ function program:runUntilExit()
         end
 
         self:stopRun()
-        isRunning, problem = false, message
+        isRunning, problem = false, pendingProblem
+      else
+        local name, message = event.pullFiltered(isProgramSignal)
+
+        if name == "exit" then
+          self:exit(message)
+          return
+        elseif name == "program_edit" and self:edit(true) == "restart" then
+          self:stopRun()
+          isRunning, problem = self:startRun()
+        end
+        -- "program_error" is collected by the error listener and handled at the top of the loop
       end
     else
       local now = computer.uptime()
@@ -316,9 +346,14 @@ function program:runUntilExit()
       self.attempt = self.attempt + 1
       self:showError(problem)
 
-      if self:waitForExit(self.retrySeconds) then
+      local action = self:waitForExit(self.retrySeconds)
+
+      if action == "exit" then
         self:exit()
         return
+      elseif action == "edit" then
+        -- The fixed config.lua is tried at once
+        self:edit(false)
       end
 
       self:showStatus("Starting again now (attempt "..self.attempt..")...", nil)
@@ -342,6 +377,7 @@ end
 function program:startRun()
   self.runId = self.runId + 1
   self.runStartedAt = computer.uptime()
+  self.pendingErrors = {}
 
   if self.onInit then
     local isOk, problem = xpcall(self.onInit, debug.traceback)
@@ -383,9 +419,47 @@ function program:stopRun()
   end
 end
 
----Wait with a countdown on the screen, and return true if Q was pressed
+---Get the first error of the current run, and forget the others
+---@return any|nil
+---@private
+function program:takeError()
+  local errors = self.pendingErrors
+  self.pendingErrors = {}
+
+  for _, each in ipairs(errors) do
+    -- An error from a run that already stopped is ignored
+    if each.runId == nil or each.runId == self.runId then
+      return each.message
+    end
+  end
+
+  return nil
+end
+
+---Edit the config with onEdit. The program's keys are ignored meanwhile
+---@param isRunning boolean
+---@return string|nil
+---@private
+function program:edit(isRunning)
+  if self.onEdit == nil then
+    return nil
+  end
+
+  self.isEditing = true
+  local isOk, result = pcall(self.onEdit, isRunning)
+  self.isEditing = false
+
+  if not isOk then
+    event.push("log_error", "[Program] Editing failed: "..firstLine(result))
+    return nil
+  end
+
+  return result
+end
+
+---Wait with a countdown on the screen. Returns "exit" for Q, "edit" for E, or nil
 ---@param seconds number
----@return boolean
+---@return string|nil
 ---@private
 function program:waitForExit(seconds)
   local deadline = computer.uptime() + seconds
@@ -403,11 +477,13 @@ function program:waitForExit(seconds)
     local name = event.pullFiltered(math.min(1, left), isProgramSignal)
 
     if name == "exit" then
-      return true
+      return "exit"
+    elseif name == "program_edit" and self.onEdit ~= nil then
+      return "edit"
     end
   end
 
-  return false
+  return nil
 end
 
 ---Show an error. The status lines under it say when the program starts again
@@ -441,7 +517,13 @@ function program:showError(problem)
   self.statusRow = math.min(row + 1, height - 2)
 
   gpu.setForeground(0xA9A9A9)
-  gpu.set(1, self.statusRow + 2, "Press Q to stop now (switches the plant off)")
+
+  if self.onEdit ~= nil then
+    gpu.set(1, self.statusRow + 2, "E: edit config.lua    Q: stop now (switches the plant off)")
+  else
+    gpu.set(1, self.statusRow + 2, "Q: stop now (switches the plant off)")
+  end
+
   gpu.setForeground(self.defaultForeground)
 end
 
@@ -472,6 +554,11 @@ function program:exit(exception)
   if self.keyListener then
     event.cancel(self.keyListener)
     self.keyListener = nil
+  end
+
+  if self.errorListener then
+    event.cancel(self.errorListener)
+    self.errorListener = nil
   end
 
   component.gpu.freeAllBuffers()

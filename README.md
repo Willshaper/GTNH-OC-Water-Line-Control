@@ -47,6 +47,8 @@ And there is also the possibility of auto update at startup.
 
 <kbd>Q</kbd> - Closing the program
 
+<kbd>E</kbd> - Edit `config.lua` while the program runs, see [Changing the config while it runs](#live-edit)
+
 <kbd>Arrow Up</kbd> - Scroll list up
 
 <kbd>Arrow Down</kbd> - Scroll list down
@@ -105,7 +107,7 @@ main
 To start it whenever the computer boots, add it to `/home/.shrc`:
 
 ```shell
-echo main >> /home/.shrc
+echo 'cd /home && main' >> /home/.shrc
 ```
 
 To turn the server back on after a power loss, put a Redstone Card in it, run `lua` and enter `component.redstone.setWakeThreshold(1)` (the card remembers it).
@@ -116,6 +118,7 @@ Keep the clock away from the screen: a redstone pulse turns an OpenComputers scr
 
 If an error stops the program, for example a unit that can't be read while its chunk reloads, or a mistake in `config.lua`,
 it shows the error, waits 30 seconds and starts again. The plant keeps running in the meantime, and units that need attention stay off.
+The screen counts down to the next try. For a mistake in `config.lua`, press E to fix it: the program tries it as soon as you close the editor.
 If it still fails after 5 minutes, it switches the plant off and stops: fix the problem, then run `main`.
 
 Press Q to stop the program at any time. This switches the plant off too.
@@ -533,6 +536,18 @@ quantityController = { -- Decides which units run, from the amount of each water
 General configuration in file `config.lua`
 The configuration of water line modules is described in paragraph [Water Line Setup](#water-line-setup),
 and the `quantityController` settings in [Quantity Controller](#quantity-controller).
+
+<a id="live-edit"></a>
+
+#### Changing the config while it runs
+
+Press E while the program runs: `config.lua` opens in the editor. Save with Ctrl+S and close with Ctrl+W.
+The water line keeps running while you edit, and the Quantity Controller keeps choosing units.
+
+- Changes to the mode, `floorQty`, `minQty`, the thresholds, the log and Discord are used at once.
+- Changes to which units are enabled, their transposers, `maxQuarkCount`, the ME interface address, or switching the Quantity Controller on or off
+  need the program to start again. It asks: Y starts it again in place, without switching the plant off. N keeps the running settings until the next start.
+- If the file has a mistake, it is shown: E edits it again, any other key keeps the settings that are running.
 
 Enable auto update when starting the program.
 

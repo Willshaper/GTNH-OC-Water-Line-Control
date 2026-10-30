@@ -1,6 +1,7 @@
 local event = require("event")
 local term = require("term")
 local keyboard = require("keyboard")
+local shell = require("shell")
 local unicode = require("unicode")
 
 local configManager = require("lib.config-manager.index")
@@ -17,10 +18,18 @@ local formatAmount = require("src.format-amount")
 local version = require("version")
 
 ---Read config.lua and build it. A mistake in it is an error, which the program shows and retries
----@return Config
+---@return Config config
+---@return table raw The values as written in config.lua
 local function loadConfig()
   package.loaded.config = nil
-  return configManager.manager:new(configTemplate):build(require("config"))
+  local raw = require("config")
+  return configManager.manager:new(configTemplate):build(raw), raw
+end
+
+---Find config.lua the way require finds it
+---@return string
+local function configPath()
+  return package.searchpath("config", package.path) or "config.lua"
 end
 
 -- Only to know whether to update at the start. A broken config.lua is reported when the program starts
@@ -36,6 +45,10 @@ local gui = simpleGui.gui:new(program)
 
 ---@type Config
 local config = nil
+
+---The values of config.lua the running program was built from
+---@type table
+local runningRaw = nil
 
 ---@type LineController
 local lineController = nil
@@ -130,13 +143,14 @@ local function carryOver(oldConfig, newConfig)
 end
 
 local function init()
-  local newConfig = loadConfig()
+  local newConfig, newRaw = loadConfig()
 
   if config ~= nil then
     carryOver(config, newConfig)
   end
 
   config = newConfig
+  runningRaw = newRaw
   discord.configure(config.discord)
 
   for i = 1, 8, 1 do
@@ -269,7 +283,7 @@ end
 ---Footer: keys, and what the marks mean
 ---@return string
 local function renderFooter()
-  return "&lightGray;↑↓ scroll   Q quit   &cyan;▶&lightGray; next cycle   &red;✗&lightGray; needs attention"
+  return "&lightGray;↑↓ scroll  E edit  Q quit  &cyan;▶&lightGray; next cycle  &red;✗&lightGray; needs attention"
 end
 
 ---Colour the state of a unit controller
@@ -406,6 +420,167 @@ local function guiLoop()
   gui:render(values)
 end
 
+---Compare two values of config.lua
+---@param a any
+---@param b any
+---@return boolean
+local function isSame(a, b)
+  if type(a) ~= "table" or type(b) ~= "table" then
+    return a == b
+  end
+
+  for key, value in pairs(a) do
+    if not isSame(value, b[key]) then
+      return false
+    end
+  end
+
+  for key in pairs(b) do
+    if a[key] == nil then
+      return false
+    end
+  end
+
+  return true
+end
+
+---Changes that need the program to start again: the units and the ME interface are found when it starts
+---@param oldRaw table
+---@param newRaw table
+---@return string[]
+local function restartReasons(oldRaw, newRaw)
+  local reasons = {}
+  local oldQc, newQc = oldRaw.quantityController or {}, newRaw.quantityController or {}
+
+  if not isSame(oldRaw.controllers, newRaw.controllers) then
+    table.insert(reasons, "units (enable, transposers, maxQuarkCount)")
+  end
+
+  if oldQc.meInterfaceAddress ~= newQc.meInterfaceAddress then
+    table.insert(reasons, "ME interface address")
+  end
+
+  if (oldQc.controlMode == "disabled") ~= (newQc.controlMode == "disabled") then
+    table.insert(reasons, "Quantity Controller on or off")
+  end
+
+  return reasons
+end
+
+---Use new settings without starting again: the log, Discord and the Quantity Controller's mode and amounts
+---@param newConfig Config
+local function applyLive(newConfig)
+  local oldLog = config.logger.handlers["scrollList"]
+  local newLog = newConfig.logger.handlers["scrollList"]
+
+  if oldLog ~= nil and newLog ~= nil then
+    newLog.logs = oldLog.logs
+    newLog.lastMessage = oldLog.lastMessage
+    newLog.repeatCount = oldLog.repeatCount
+  end
+
+  config.logger:stop()
+  config.logger = newConfig.logger
+  config.discord = newConfig.discord
+  config.enableAutoStart = newConfig.enableAutoStart
+  config.enableAutoUpdate = newConfig.enableAutoUpdate
+  discord.configure(config.discord)
+
+  local quantityController = config.quantityController
+  local newQuantityController = newConfig.quantityController
+
+  quantityController.controlMode = newQuantityController.controlMode
+  quantityController.floorQty = newQuantityController.floorQty
+  quantityController.minQty = newQuantityController.minQty
+  quantityController.waterThresholds = newQuantityController.waterThresholds
+
+  -- Choose again now, so the screen shows it. A unit switched on now starts in the next cycle,
+  -- and one switched off finishes the cycle it is running
+  if quantityController.controlMode ~= "disabled" then
+    quantityController:checkSettings()
+    quantityController:updateWaterLevels()
+    quantityController:updateControllerEnablement()
+  end
+end
+
+---Read one key. Its key_up is waited for too, so it can't reach the program's keys afterwards
+---@return string
+local function readKey()
+  local _, _, char, code = event.pull("key_down")
+  event.pull(2, "key_up", nil, nil, code)
+
+  return string.char(char or 0):lower()
+end
+
+---E: edit config.lua while the program runs, or while it waits after an error.
+---Returns "restart" when the program should start again with it
+---@param isRunning boolean
+---@return string|nil
+local function onEdit(isRunning)
+  local result = nil
+
+  gui.allowRender = false
+  gui:resetScreen()
+
+  while true do
+    shell.execute('edit "'..configPath()..'"')
+    term.setCursorBlink(false)
+
+    -- Waiting after an error: the program tries the new config.lua when it starts again
+    if not isRunning then
+      break
+    end
+
+    local isOk, newConfig, newRaw = pcall(loadConfig)
+
+    if not isOk then
+      term.clear()
+      term.write("config.lua has a mistake, so it was not used:\n\n")
+      term.write(tostring(newConfig):gsub("\nstack traceback:.*$", "").."\n\n")
+      term.write("E: edit it again    any other key: keep the old settings\n")
+
+      if readKey() ~= "e" then
+        event.push("log_warning", "[Config] Mistake, old settings kept")
+        break
+      end
+    else
+      local reasons = restartReasons(runningRaw, newRaw)
+
+      if isSame(runningRaw, newRaw) then
+        newConfig.logger:stop()
+      elseif #reasons > 0 then
+        newConfig.logger:stop()
+        term.clear()
+        term.write("These changes need the program to start again: "..table.concat(reasons, ", ")..".\n")
+        term.write("The plant keeps running, and units that need attention stay off.\n\n")
+        term.write("Start again now? [y/N] ")
+
+        if readKey() == "y" then
+          event.push("log_info", "[Config] Starting again with the new settings")
+          result = "restart"
+        else
+          event.push("log_warning", "[Config] Not used until the program starts again")
+        end
+      else
+        applyLive(newConfig)
+        runningRaw = newRaw
+        event.push("log_info", "[Config] New settings in use")
+      end
+
+      break
+    end
+  end
+
+  gui.allowRender = true
+
+  -- Waiting after an error, the error screen is drawn again; a restart sets up the screen itself
+  if isRunning and result ~= "restart" then
+    gui:resetToTemplate()
+  end
+
+  return result
+end
+
 ---A run stops: after an error, or before exiting. The plant is left as it is
 local function onStop()
   listeners.cancelAll()
@@ -452,6 +627,10 @@ program:registerOnInit(init)
 program:registerOnStop(onStop)
 program:registerOnExit(onExit)
 program:registerOnErrors(onError, onRecovered, onGiveUp)
+program:registerOnEdit(onEdit)
+program:registerKeyHandler(keyboard.keys.e, function ()
+  event.push("program_edit")
+end)
 program:registerThread(loop)
 program:registerTimer(guiLoop, math.huge, 1)
 program:start()

@@ -122,7 +122,7 @@ function t3controller:initStateMachine()
       local amount = type(fluidInTank) == "table" and fluidInTank.amount or 0
 
       if amount < self.requiredCount then
-        self:markNeedsAttention()
+        self:markNeedsAttention("Not enough Polyaluminium Chloride for craft")
         event.push("log_warning", "[T3] Not enough Polyaluminium Chloride for craft")
 
         countToAdd = amount - (amount % 100000)

@@ -10,6 +10,7 @@ local simpleGui = require("lib.simple-gui.index")
 local configTemplate = require("src.config-template")
 local lineControllerClass = require("src.line-controller")
 local listeners = require("src.listeners")
+local discord = require("src.discord")
 local scrollList = require("src.gui-widgets.scroll-list")
 local formatAmount = require("src.format-amount")
 
@@ -120,6 +121,7 @@ local function carryOver(oldConfig, newConfig)
 
     if oldController ~= nil and newController ~= nil and oldController.needsAttention == true then
       newController.needsAttention = true
+      newController.attentionReason = oldController.attentionReason
       newConfig.quantityController.isAttentionLogged[tier] = oldConfig.quantityController.isAttentionLogged[tier]
     end
   end
@@ -135,6 +137,7 @@ local function init()
   end
 
   config = newConfig
+  discord.configure(config.discord)
 
   for i = 1, 8, 1 do
     local key = "t"..i
@@ -153,6 +156,22 @@ local function init()
   if isStarted == false then
     event.push("log_info", "Program started, QC mode "..config.quantityController.controlMode)
     isStarted = true
+
+    if config.logger.handlers["discord"] ~= nil then
+      event.push("log_warning", "[Discord] Old log handler unused, see discord = {}")
+    end
+
+    local units = {}
+
+    for tier = 1, 8 do
+      if config.controllers["t"..tier] ~= nil then
+        table.insert(units, "T"..tier)
+      end
+    end
+
+    discord.start()
+    discord.info("started", "Water Line Control started",
+      "Mode "..config.quantityController.controlMode..", units "..(#units > 0 and table.concat(units, " ") or "none")..".")
   end
 
   lineController = lineControllerClass:new()
@@ -392,10 +411,36 @@ local function onStop()
   listeners.cancelAll()
 end
 
+---The text of an error for Discord: without the stack traceback, on one line
+---@param problem any
+---@return string
+local function errorText(problem)
+  local text = tostring(problem):gsub("\nstack traceback:.*$", ""):gsub("%s*\n%s*", " ")
+  return text
+end
+
+local function onError(problem)
+  discord.alert("error", "errors", "Error, starting again", errorText(problem)
+    .." The program starts again every 30 s, and switches the plant off if it still fails after 5 minutes.")
+end
+
+local function onRecovered()
+  discord.clear("error", "errors", "Running again after an error", "")
+end
+
+local function onGiveUp(problem)
+  discord.alert("gaveUp", "errors", "Stopped after 5 minutes of errors",
+    "The Water Purification Plant is switched off. Fix the problem, then run main. Last error: "..errorText(problem))
+end
+
 local function onExit()
   if lineController ~= nil then
     lineController:disable()
   end
+
+  -- Messages that are still waiting get a few seconds
+  discord.finish(10)
+  discord.stop()
 
   if config ~= nil then
     config.logger:stop()
@@ -406,6 +451,7 @@ program:registerLogo(logo)
 program:registerOnInit(init)
 program:registerOnStop(onStop)
 program:registerOnExit(onExit)
+program:registerOnErrors(onError, onRecovered, onGiveUp)
 program:registerThread(loop)
 program:registerTimer(guiLoop, math.huge, 1)
 program:start()

@@ -6,12 +6,6 @@ local config = {
     name = "Water Line Control",
     timeZone = 3, -- Your time zone
     handlers = {
-      ["discord"] = {
-        type = "discord",
-        logLevel = "warning",
-        messageFormat = "{Time:%d.%m.%Y %H:%M:%S} [{LogLevel}]: {Message}",
-        discordWebhookUrl = "" -- Discord Webhook URL
-      },
       ["file"] = {
         type = "file",
         logLevel = "debug",
@@ -25,6 +19,18 @@ local config = {
         logsListSize = 32
       },
     }
+  },
+
+  discord = { -- Messages to a Discord channel through a webhook. Needs an internet card
+    webhookUrl = "", -- Channel settings > Integrations > Webhooks > New Webhook > Copy Webhook URL. "" is off
+    name = "", -- Shown in each message, to tell several computers apart
+    mention = "", -- Pinged on red messages: a user "<@123456789>" or a role "<@&123456789>". "" is nobody
+    reminderHours = 0, -- Hours between reminders while a unit still needs attention or the plant is still stopped. 0 is none
+    needsAttention = true, -- A unit needs attention, and is back in use
+    plantStopped = true, -- The Water Purification Plant stopped, and runs again
+    unitDidNotStart = true, -- A unit was chosen for 2 cycles in a row but didn't start, and starts again
+    errors = true, -- The program had an error, runs again, or stopped after 5 minutes of errors
+    started = true -- The program started
   },
 
   controllers = {

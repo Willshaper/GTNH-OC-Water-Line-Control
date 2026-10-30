@@ -220,7 +220,7 @@ function t5controller:putPlasma()
   )
 
   if result ~= self.plasmaCount then
-    self:markNeedsAttention()
+    self:markNeedsAttention("Not enough Helium Plasma for craft")
     event.push("log_warning", "[T5] Not enough Helium Plasma for craft")
   end
 end
@@ -236,7 +236,7 @@ function t5controller:putCoolant()
   )
 
   if result ~= self.coolantCount then
-    self:markNeedsAttention()
+    self:markNeedsAttention("Not enough Super Coolant for craft")
     event.push("log_warning", "[T5] Not enough Super Coolant for craft")
   end
 end

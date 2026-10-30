@@ -4,6 +4,8 @@ local term = require("term")
 local classBuilder = require("lib.class-builder.index")
 local componentDiscover = require("lib.component-discover.index")
 
+local discord = require("src.discord")
+
 ---Ticks before the end of a cycle when "cycle_pre_end" is sent. 10 seconds, so a slow loop with all eight tiers still sees it
 local preEndTicks = 200
 
@@ -56,10 +58,13 @@ function lineController:loop()
     end
   elseif hasWork == true and self.wasWorking == false then
     self:logCycleStart()
+    discord.clear("plant", "plantStopped", "Water Purification Plant runs again", "")
   end
 
   if hasWork == false and self.wasWorking == true then
     event.push("log_warning", "[Line] Plant stopped (switched off or no power)")
+    discord.alert("plant", "plantStopped", "Water Purification Plant stopped",
+      "It was switched off, or has no power.", "Water Purification Plant still stopped")
   end
 
   self.wasWorking = hasWork

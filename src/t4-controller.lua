@@ -209,7 +209,7 @@ function t4controller:putSodiumHydroxide(count)
     )
 
     if result ~= sodiumHydroxideCount then
-      self:markNeedsAttention()
+      self:markNeedsAttention("Not enough Sodium Hydroxide for craft")
       event.push("log_warning", "[T4] Not enough Sodium Hydroxide for craft")
       break
     end
@@ -230,7 +230,7 @@ function t4controller:putHydrochloricAcid(count)
   )
 
   if result ~= hydrochloricAcidCount then
-    self:markNeedsAttention()
+    self:markNeedsAttention("Not enough Hydrochloric Acid for craft")
     event.push("log_warning", "[T4] Not enough Hydrochloric Acid for craft")
   end
 

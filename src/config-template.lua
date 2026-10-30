@@ -25,6 +25,7 @@ local t8controller = require("src.t8-controller")
 ---@field enableAutoUpdate boolean
 ---@field enableAutoStart? boolean
 ---@field logger Logger
+---@field discord? table
 ---@field controllers ControllersConfig
 ---@field quantityController QuantityController
 
@@ -69,19 +70,13 @@ local configTemplate = {
         }),
         handlers = configManager.validators.typedObjectList:new({
           templates = {
+            -- The old Discord log handler. Still accepted, so a config.lua that has it loads, but it sends nothing:
+            -- the discord block replaces it
             ["discord"] = configManager.validators.object:new(
               {
-                template = {
-                  logLevel = configManager.validators.enum:new({
-                    "debug", "info", "warning", "error"
-                  }),
-                  messageFormat = configManager.validators.string:new(),
-                  discordWebhookUrl = configManager.validators.string:new({
-                    isNullable = {value = true}
-                  }),
-                },
-                objectFactory = function (value)
-                  return logger.handlers.discord:new(value.logLevel, value.messageFormat, value.discordWebhookUrl)
+                template = {},
+                objectFactory = function ()
+                  return {logLevel = "error", messageFormat = "{Message}", log = function () end}
                 end
               }
             ),
@@ -129,6 +124,22 @@ local configTemplate = {
       end
     }
   ),
+
+  -- Optional, so a config.lua from before this option still loads. Missing means no Discord messages
+  discord = configManager.validators.object:new({
+    isNullable = true,
+    template = {
+      webhookUrl = configManager.validators.string:new({isNullable = true}),
+      name = configManager.validators.string:new({isNullable = true}),
+      mention = configManager.validators.string:new({isNullable = true}),
+      reminderHours = configManager.validators.number:new({isNullable = true, min = {value = 0}}),
+      needsAttention = configManager.validators.boolean:new({isNullable = true}),
+      plantStopped = configManager.validators.boolean:new({isNullable = true}),
+      unitDidNotStart = configManager.validators.boolean:new({isNullable = true}),
+      errors = configManager.validators.boolean:new({isNullable = true}),
+      started = configManager.validators.boolean:new({isNullable = true}),
+    }
+  }),
 
   controllers = configManager.validators.object:new({
     template = {

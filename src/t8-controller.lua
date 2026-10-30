@@ -246,7 +246,7 @@ function t8controller:putQuarks(index)
     )
 
     if transfered == 0 then
-      self:markNeedsAttention()
+      self:markNeedsAttention("Not enough quarks on slot: "..self.drops[index][i])
       event.push("log_warning", "[T8] Not enough quarks on slot: "..self.drops[index][i])
     end
   end
@@ -263,7 +263,7 @@ function t8controller:craftQuarks()
 
       if crafts[1] == nil then
         event.push("log_warning", "[T8] No craft for: "..quark.label)
-        self:markNeedsAttention()
+        self:markNeedsAttention("No craft for: "..quark.label)
         break
       end
 

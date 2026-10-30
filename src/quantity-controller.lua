@@ -6,6 +6,7 @@ local componentDiscover = require("lib.component-discover.index")
 
 local formatAmount = require("src.format-amount")
 local listeners = require("src.listeners")
+local discord = require("src.discord")
 
 ---Fluids read from the ME network. Index 9 (Stabilised Baryonic Matter) is made by T8
 local fluidNames = {
@@ -48,6 +49,8 @@ end
 ---@field isTierActive boolean[]
 ---@field lastDecision string|nil
 ---@field isAttentionLogged boolean[]
+---@field missedStarts integer[]
+---@field isDecisionLate boolean
 local quantityController = {}
 
 ---Constructor
@@ -68,6 +71,8 @@ function quantityController:constructor(controlMode, meInterfaceAddress, minQty,
   self.isTierActive = {false, false, false, false, false, false, false, false}
   self.lastDecision = nil
   self.isAttentionLogged = {}
+  self.missedStarts = {}
+  self.isDecisionLate = false
 
   return self
 end
@@ -90,8 +95,14 @@ function quantityController:init(controllers)
       event.push("log_debug", "[QC] Cycle end seen late, the units chosen now start one cycle later")
     end
 
+    self.isDecisionLate = isLate == true
+
     self:updateWaterLevels()
     self:updateControllerEnablement()
+  end)
+
+  listeners.listen("cycle_end", function ()
+    self:checkChosenStarted()
   end)
 
   -- Enable the right units now, so the next cycle doesn't start every unit that was left on
@@ -120,6 +131,7 @@ function quantityController:checkAttentionStates()
     if controller ~= nil and controller:checkAttentionCleared() then
       event.push("log_info", "[T"..tier.."] Switched on by hand, back in use")
       self.isAttentionLogged[tier] = false
+      discord.clear("attention:T"..tier, "needsAttention", "T"..tier.." is back in use", "Switched on by hand.")
 
       -- The Quantity Controller decides when it runs again, so it doesn't start next to the unit it chose
       if self.controlMode ~= "disabled" then
@@ -128,6 +140,49 @@ function quantityController:checkAttentionStates()
     elseif controller ~= nil and controller.needsAttention == true and self.isAttentionLogged[tier] ~= true then
       event.push("log_warning", "[T"..tier.."] Needs attention, switch it on when fixed")
       self.isAttentionLogged[tier] = true
+
+      local reason = controller.attentionReason ~= "" and (controller.attentionReason..". ") or ""
+      discord.alert("attention:T"..tier, "needsAttention", "T"..tier.." needs attention",
+        reason.."Switch it on by hand when it is fixed.", "T"..tier.." still needs attention")
+    end
+  end
+end
+
+---Check that the units chosen for the cycle that just started run. GregTech doesn't start a unit
+---that misses an input, which the program can't see otherwise
+---@private
+function quantityController:checkChosenStarted()
+  -- A late choice is for the next cycle, not this one
+  if self.isDecisionLate then
+    self.isDecisionLate = false
+    return
+  end
+
+  for tier = 1, 8 do
+    local controller = self.controllers["t"..tier]
+
+    if controller ~= nil and self.isTierActive[tier] and controller.needsAttention ~= true then
+      if controller.controllerProxy.hasWork() == true then
+        if (self.missedStarts[tier] or 0) >= 2 then
+          event.push("log_info", "[T"..tier.."] Started again")
+        end
+
+        self.missedStarts[tier] = 0
+        discord.clear("didNotStart:T"..tier, "unitDidNotStart", "T"..tier.." starts again", "")
+      else
+        self.missedStarts[tier] = (self.missedStarts[tier] or 0) + 1
+
+        if self.missedStarts[tier] == 2 then
+          event.push("log_warning", "[T"..tier.."] Chosen twice, didn't start: check inputs")
+          discord.alert("didNotStart:T"..tier, "unitDidNotStart", "T"..tier.." didn't start",
+            "It was chosen for 2 cycles in a row, but GregTech didn't start it. Check its inputs (water, Ozone, catalysts).",
+            "T"..tier.." still doesn't start")
+        end
+      end
+    elseif not self.isTierActive[tier] then
+      -- Only cycles in a row count, and a unit that isn't chosen any more isn't reported
+      self.missedStarts[tier] = 0
+      discord.forget("didNotStart:T"..tier)
     end
   end
 end

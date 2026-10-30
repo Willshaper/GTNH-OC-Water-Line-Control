@@ -40,7 +40,7 @@ What the fork adds:
 Program is designed to automate the water line from T3 to T8 water, and can switch T1 and T2 on and off.
 Program is modular, you can choose which water types you want to automate.
 The Quantity Controller can also decide which units run, from the amount of each water in your ME network.
-It is also possible to send messages to Discord about out of service situations.
+It can send messages to Discord when a unit needs attention, the plant stops, or the program has an error, see [Discord messages](#discord).
 And there is also the possibility of auto update at startup.
 
 #### Controls
@@ -551,20 +551,11 @@ enableAutoStart = true, -- Switch the Water Purification Plant on when the progr
 
 In the `timeZone` field you can specify your time zone.
 
-In the `discordWebhookUrl` field, you can specify the Discord Webhook link so that the program sends messages to the discord about emergency situations.
-[How to Create a Discord Webhook?](https://www.svix.com/resources/guides/how-to-make-webhook-discord/)
-
 ```lua
 logger = {
   name = "Water Line Control",
   timeZone = 3, -- Your time zone
   handlers = {
-    ["discord"] = {
-      type = "discord",
-      logLevel = "warning",
-      messageFormat = "{Time:%d.%m.%Y %H:%M:%S} [{LogLevel}]: {Message}",
-      discordWebhookUrl = "" -- Discord Webhook URL
-    },
     ["file"] = {
       type = "file",
       logLevel = "debug",
@@ -590,6 +581,49 @@ The log on the screen (`scrollList`) shows the time and what the program does, n
 
 The same line again doesn't add a new row, the newest row gets a count instead, e.g. `[Line] Cycle started: T2 (x4)`. `logs.log` keeps every line.
 A `scrollList` without `messageFormat` uses `"{Time:%H:%M} {Message}"`.
+
+<a id="discord"></a>
+
+#### Discord messages
+
+The program can post to a Discord channel when something needs you. The computer needs an internet card.
+
+1. In Discord, open the channel's settings > Integrations > Webhooks > New Webhook, and Copy Webhook URL.
+2. Put it in `webhookUrl` in the `discord` block of `config.lua`.
+3. Optionally set `name` to tell several computers apart, and `mention` to be pinged. Discord only pings IDs:
+   turn on Settings > Advanced > Developer Mode, then right-click yourself > Copy User ID, and write it as `"<@123456789>"` (a role is `"<@&123456789>"`).
+
+```lua
+discord = { -- Messages to a Discord channel through a webhook. Needs an internet card
+  webhookUrl = "", -- Channel settings > Integrations > Webhooks > New Webhook > Copy Webhook URL. "" is off
+  name = "", -- Shown in each message, to tell several computers apart
+  mention = "", -- Pinged on red messages: a user "<@123456789>" or a role "<@&123456789>". "" is nobody
+  reminderHours = 0, -- Hours between reminders while a unit still needs attention or the plant is still stopped. 0 is none
+  needsAttention = true, -- A unit needs attention, and is back in use
+  plantStopped = true, -- The Water Purification Plant stopped, and runs again
+  unitDidNotStart = true, -- A unit was chosen for 2 cycles in a row but didn't start, and starts again
+  errors = true, -- The program had an error, runs again, or stopped after 5 minutes of errors
+  started = true -- The program started
+},
+```
+
+| Message | Colour | When |
+|---|---|---|
+| T3 needs attention / is back in use | red, pings / green | A unit stopped after a fault, with what is wrong (e.g. "Not enough Polyaluminium Chloride for craft"), and when you switched it back on. |
+| Water Purification Plant stopped / runs again | red, pings / green | The plant stopped (switched off, or no power), and runs again. Not when you stop the program with Q. |
+| T2 didn't start / starts again | red, pings / green | The Quantity Controller chose a unit for 2 cycles in a row, but GregTech didn't start it: usually a missing input. |
+| Error, starting again / Running again after an error | red, pings / green | The program had an error and starts again in 30 s, and when it runs again. |
+| Stopped after 5 minutes of errors | red, pings | The program switched the plant off and stopped. |
+| Water Line Control started | gray | The program started, with the mode and the units. |
+
+With `reminderHours`, a reminder follows while a unit still needs attention, a unit still doesn't start, or the plant is still stopped.
+An alert that clears and comes back is sent again at most once every 30 minutes.
+Messages are sent in the background, so a slow or unreachable Discord never holds up the water line.
+If sending doesn't work (no internet card, a wrong webhook), the log says why, once.
+
+Keep the webhook URL private: anyone who has it can post in that channel. The program never shows it on the screen or in the log.
+
+The old `["discord"]` handler in `logger.handlers` is no longer used. A `config.lua` that still has it loads, and the log reminds you to use the `discord` block instead.
 
 <a id="credits"></a>
 

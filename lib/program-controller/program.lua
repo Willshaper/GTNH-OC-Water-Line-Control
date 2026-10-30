@@ -36,6 +36,41 @@ local function firstLine(message)
   return (tostring(message):match("^[^\n]*"))
 end
 
+---"4m 30s", "45s"
+---@param seconds number
+---@return string
+local function duration(seconds)
+  seconds = math.max(0, math.ceil(seconds))
+
+  if seconds >= 60 then
+    return string.format("%dm %02ds", seconds // 60, seconds % 60)
+  end
+
+  return seconds.."s"
+end
+
+---Get the lines of an error to show: the message without the stack traceback, cut to the width
+---@param message any
+---@param width integer
+---@return string[]
+local function errorLines(message, width)
+  local text = tostring(message):gsub("\nstack traceback:.*$", "")
+  local lines = {}
+
+  for line in text:gmatch("[^\n]+") do
+    line = line:gsub("^%s+", "")
+
+    while #line > width do
+      table.insert(lines, line:sub(1, width))
+      line = line:sub(width + 1)
+    end
+
+    table.insert(lines, line)
+  end
+
+  return lines
+end
+
 ---@class Program
 ---@field enableAutoUpdate? boolean
 ---@field version? ProgramVersion
@@ -49,6 +84,8 @@ end
 ---@field runId integer
 ---@field runStartedAt number
 ---@field failingSince? number
+---@field attempt integer
+---@field statusRow integer
 ---@field retrySeconds number
 ---@field giveUpSeconds number
 ---@field defaultLoopInterval number
@@ -60,6 +97,9 @@ end
 ---@field onInit? fun()
 ---@field onStop? fun()
 ---@field onExit? fun()
+---@field onError? fun(problem: any)
+---@field onRecovered? fun()
+---@field onGiveUp? fun(problem: any)
 ---@field updater ProgramUpdater
 local program = {}
 
@@ -84,6 +124,8 @@ function program:constructor(enableAutoUpdate, version, repository, archiveName)
   self.runId = 0
   self.runStartedAt = 0
   self.failingSince = nil
+  self.attempt = 0
+  self.statusRow = 1
 
   -- After an error the program starts again after retrySeconds. It gives up when it is still failing after giveUpSeconds
   self.retrySeconds = 30
@@ -100,6 +142,9 @@ function program:constructor(enableAutoUpdate, version, repository, archiveName)
   self.onInit = nil
   self.onStop = nil
   self.onExit = nil
+  self.onError = nil
+  self.onRecovered = nil
+  self.onGiveUp = nil
 
   self.updater = programUpdater:new(self)
 
@@ -128,6 +173,17 @@ end
 ---@param callback function
 function program:registerOnExit(callback)
   self.onExit = callback
+end
+
+---Register functions for errors: onError(problem) each time the program waits to start again,
+---onRecovered() when it runs again, onGiveUp(problem) before it stops for good
+---@param onError fun(problem: any)
+---@param onRecovered fun()
+---@param onGiveUp fun(problem: any)
+function program:registerOnErrors(onError, onRecovered, onGiveUp)
+  self.onError = onError
+  self.onRecovered = onRecovered
+  self.onGiveUp = onGiveUp
 end
 
 ---Register timer
@@ -230,6 +286,7 @@ function program:runUntilExit()
         -- A run that went well for a while starts a new count
         if computer.uptime() - self.runStartedAt >= self.giveUpSeconds then
           self.failingSince = nil
+          self.attempt = 0
         end
 
         self:stopRun()
@@ -242,22 +299,37 @@ function program:runUntilExit()
 
       if giveUpIn <= 0 then
         event.push("log_error", "[Program] Still failing after "..math.floor(self.giveUpSeconds / 60).." min, stopping")
+
+        if self.onGiveUp then
+          pcall(self.onGiveUp, problem)
+        end
+
         self:exit(problem)
         return
       end
 
+      if self.onError then
+        pcall(self.onError, problem)
+      end
+
       event.push("log_error", "[Program] Error, restarting in "..self.retrySeconds.."s: "..firstLine(problem))
-      self:showError(problem, giveUpIn)
+      self.attempt = self.attempt + 1
+      self:showError(problem)
 
       if self:waitForExit(self.retrySeconds) then
         self:exit()
         return
       end
 
+      self:showStatus("Starting again now (attempt "..self.attempt..")...", nil)
       isRunning, problem = self:startRun()
 
       if isRunning then
         event.push("log_warning", "[Program] Started again after an error")
+
+        if self.onRecovered then
+          pcall(self.onRecovered)
+        end
       end
     end
   end
@@ -311,7 +383,7 @@ function program:stopRun()
   end
 end
 
----Wait, and return true if Q was pressed
+---Wait with a countdown on the screen, and return true if Q was pressed
 ---@param seconds number
 ---@return boolean
 ---@private
@@ -319,7 +391,16 @@ function program:waitForExit(seconds)
   local deadline = computer.uptime() + seconds
 
   while computer.uptime() < deadline do
-    local name = event.pullFiltered(deadline - computer.uptime(), isProgramSignal)
+    local left = deadline - computer.uptime()
+    local giveUpIn = self.giveUpSeconds - (computer.uptime() - self.failingSince)
+
+    self:showStatus(
+      "Starting again in "..duration(left).." (attempt "..self.attempt..")",
+      "Gives up in "..duration(giveUpIn).." if it keeps failing (plant off)"
+    )
+
+    -- Wake up every second for the countdown
+    local name = event.pullFiltered(math.min(1, left), isProgramSignal)
 
     if name == "exit" then
       return true
@@ -329,33 +410,58 @@ function program:waitForExit(seconds)
   return false
 end
 
----Show an error and when the program starts again
+---Show an error. The status lines under it say when the program starts again
 ---@param problem any
----@param giveUpIn number
 ---@private
-function program:showError(problem, giveUpIn)
-  component.gpu.freeAllBuffers()
-  component.gpu.setResolution(self.defaultWidth, self.defaultHeight)
-  component.gpu.setForeground(0xFF5555)
-  component.gpu.setBackground(self.defaultBackground)
-  term.clear()
+function program:showError(problem)
+  local gpu = component.gpu
+  local width, height = self.defaultWidth, self.defaultHeight
 
-  term.write("Error, starting again in "..self.retrySeconds.."s.\n")
-  term.write("If it still fails in "..math.ceil(giveUpIn / 60).." min, it switches the plant off and stops.\n")
-  term.write("Press Q to stop now.\n\n")
+  gpu.freeAllBuffers()
+  gpu.setResolution(width, height)
+  gpu.setBackground(self.defaultBackground)
+  gpu.fill(1, 1, width, height, " ")
 
-  local lineCount = 0
+  gpu.setForeground(0xFF5555)
+  gpu.set(1, 1, "The program had an error:")
+  gpu.setForeground(self.defaultForeground)
 
-  for line in tostring(problem):gmatch("[^\n]+") do
-    term.write(line.."\n")
-    lineCount = lineCount + 1
+  -- The error, leaving room for the status lines and the key help
+  local row = 3
 
-    if lineCount >= 8 then
+  for _, line in ipairs(errorLines(problem, width)) do
+    if row > height - 5 then
       break
     end
+
+    gpu.set(1, row, line)
+    row = row + 1
   end
 
-  component.gpu.setForeground(self.defaultForeground)
+  self.statusRow = math.min(row + 1, height - 2)
+
+  gpu.setForeground(0xA9A9A9)
+  gpu.set(1, self.statusRow + 2, "Press Q to stop now (switches the plant off)")
+  gpu.setForeground(self.defaultForeground)
+end
+
+---Show the status lines under the error
+---@param first string
+---@param second? string
+---@private
+function program:showStatus(first, second)
+  local gpu = component.gpu
+
+  gpu.fill(1, self.statusRow, self.defaultWidth, 2, " ")
+  gpu.setForeground(0xFFDB00)
+  gpu.set(1, self.statusRow, first)
+
+  if second then
+    gpu.setForeground(0xA9A9A9)
+    gpu.set(1, self.statusRow + 1, second)
+  end
+
+  gpu.setForeground(self.defaultForeground)
 end
 
 ---Program exit

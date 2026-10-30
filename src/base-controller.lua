@@ -1,14 +1,18 @@
 ---@class BaseController
 ---@field controllerProxy gt_machine
 ---@field needsAttention boolean
+---@field attentionReason string
 local baseController = {
-  needsAttention = false
+  needsAttention = false,
+  attentionReason = ""
 }
 
 ---Switch the unit off after a fault. The Quantity Controller won't switch it on again until the player does
-function baseController:markNeedsAttention()
+---@param reason? string What is wrong, e.g. "Not enough Polyaluminium Chloride for craft"
+function baseController:markNeedsAttention(reason)
   self.controllerProxy.setWorkAllowed(false)
   self.needsAttention = true
+  self.attentionReason = reason or ""
 end
 
 ---Clear the fault when the unit was switched on by hand. The program never switches a unit on after a fault, so only the player can have done it

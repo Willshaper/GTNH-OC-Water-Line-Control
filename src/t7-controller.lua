@@ -263,7 +263,7 @@ function t7controller:putInertGas(bits)
   )
 
   if result ~= count then
-    self:markNeedsAttention()
+    self:markNeedsAttention("Not enough "..inertGas.." for craft")
     event.push("log_warning", "[T7] Not enough "..inertGas.." for craft")
   end
 end
@@ -279,7 +279,7 @@ function t7controller:putSuperConductor()
   )
 
   if result ~= self.superconductorCount then
-    self:markNeedsAttention()
+    self:markNeedsAttention("Not enough superconductor for craft")
     event.push("log_warning", "[T7] Not enough superconductor for craft")
   end
 end
@@ -295,7 +295,7 @@ function t7controller:putNeutronium()
   )
 
   if result ~= self.neutroniumCount then
-    self:markNeedsAttention()
+    self:markNeedsAttention("Not enough neutronium for craft")
     event.push("log_warning", "[T7] Not enough neutronium for craft")
   end
 end
@@ -311,7 +311,7 @@ function t7controller:putCoolant()
   )
 
   if result ~= self.supercoolantCount then
-    self:markNeedsAttention()
+    self:markNeedsAttention("Not enough coolant for craft")
     event.push("log_warning", "[T7] Not enough coolant for craft")
   end
 end

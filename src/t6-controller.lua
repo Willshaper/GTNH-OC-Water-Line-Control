@@ -223,7 +223,7 @@ function t6controller:putLens(lens)
   )
 
   if result ~= 1 then
-    self:markNeedsAttention()
+    self:markNeedsAttention("Invalid slot: "..self.transposerItems[lens].slot.." for: "..lens)
     self.stateMachine.data.currentLens = nil
     self.stateMachine:setState("waitEnd")
     event.push("log_warning", "[T6] Invalid slot: "..self.transposerItems[lens].slot.." for: "..lens)

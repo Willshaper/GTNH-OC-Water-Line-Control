@@ -36,7 +36,7 @@ descriptor:
           type: string
           default: Water Line Control
           label: Name
-          description: Name witch will be displayed in discord
+          description: Name of the logger
 
         - key: timeZone
           type: integer
@@ -44,12 +44,77 @@ descriptor:
           label: Time Zone
           description: Your time zone
 
+    - key: discord
+      name: Discord
+      defaultOpen: false
+      fields:
         - key: discordWebhookUrl
           type: url
           default: ""
           optional: true
-          label: Discord Webhook Url
-          description: Discord Webhook Url for notifications
+          label: Webhook URL
+          description: Channel settings > Integrations > Webhooks > New Webhook > Copy Webhook URL. Empty is off. Needs an internet card
+
+        - key: discordName
+          type: string
+          default: ""
+          optional: true
+          label: Name
+          description: Shown in each message, to tell several computers apart
+
+        - key: discordMention
+          type: string
+          default: ""
+          optional: true
+          label: Mention
+          description: Pinged on red messages, a user <@123456789> or a role <@&123456789>. Discord only pings IDs. Empty is nobody
+
+        - key: discordReminderHours
+          type: integer
+          default: 0
+          min: 0
+          label: Reminder Hours
+          description: Hours between reminders while a unit still needs attention or the plant is still stopped. 0 is none
+
+        - key: discordNeedsAttention
+          type: boolean
+          optional: true
+          default: true
+          class: checkbox
+          label: Needs attention
+          description: A unit needs attention, and is back in use
+
+        - key: discordPlantStopped
+          type: boolean
+          optional: true
+          default: true
+          class: checkbox
+          label: Plant stopped
+          description: The Water Purification Plant stopped, and runs again
+
+        - key: discordUnitDidNotStart
+          type: boolean
+          optional: true
+          default: true
+          class: checkbox
+          label: Unit didn't start
+          description: A unit was chosen for 2 cycles in a row but didn't start, and starts again
+
+        - key: discordErrors
+          type: boolean
+          optional: true
+          default: true
+          class: checkbox
+          label: Errors
+          description: The program had an error, runs again, or stopped after 5 minutes of errors
+
+        - key: discordStarted
+          type: boolean
+          optional: true
+          default: true
+          class: checkbox
+          label: Started
+          description: The program started
 
     - key: t1
       name: T1 Water
@@ -350,12 +415,6 @@ descriptor:
         name = "<field>name</field>",
         timeZone = <field>timeZone</field>, -- Your time zone
         handlers = {
-          ["discord"] = {
-            type = "discord",
-            logLevel = "warning",
-            messageFormat = "{Time:%d.%m.%Y %H:%M:%S} [{LogLevel}]: {Message}",
-            discordWebhookUrl = "<field>discordWebhookUrl</field>" -- Discord Webhook URL
-          },
           ["file"] = {
             type = "file",
             logLevel = "debug",
@@ -369,6 +428,18 @@ descriptor:
             logsListSize = 32
           },
         }
+      },
+
+      discord = { -- Messages to a Discord channel through a webhook. Needs an internet card
+        webhookUrl = "<field>discordWebhookUrl</field>", -- "" is off
+        name = "<field>discordName</field>", -- Shown in each message, to tell several computers apart
+        mention = "<field>discordMention</field>", -- Pinged on red messages: a user "<@123456789>" or a role "<@&123456789>". "" is nobody
+        reminderHours = <field>discordReminderHours</field>, -- Hours between reminders while a unit still needs attention or the plant is still stopped. 0 is none
+        needsAttention = <field>discordNeedsAttention</field>, -- A unit needs attention, and is back in use
+        plantStopped = <field>discordPlantStopped</field>, -- The Water Purification Plant stopped, and runs again
+        unitDidNotStart = <field>discordUnitDidNotStart</field>, -- A unit was chosen for 2 cycles in a row but didn't start, and starts again
+        errors = <field>discordErrors</field>, -- The program had an error, runs again, or stopped after 5 minutes of errors
+        started = <field>discordStarted</field> -- The program started
       },
 
       controllers = {

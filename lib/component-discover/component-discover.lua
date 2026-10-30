@@ -161,9 +161,10 @@ function componentDiscover.transposerFluidStorages(proxy, ignoreSides)
   local sidesForCheck = getSidesForCheck(ignoreSides)
 
   for _, side in pairs(sidesForCheck) do
+    -- A side without a tank gives nil, not 0
     local tankCount = proxy.getTankCount(side)
 
-    if tankCount ~= 0 then
+    if type(tankCount) == "number" and tankCount > 0 then
       table.insert(sides, side)
     end
   end
@@ -183,14 +184,15 @@ function componentDiscover.transposerFluidStoragesByNames(proxy, fluidNames, ign
   local sidesForCheck = getSidesForCheck(ignoreSides)
 
   for _, side in pairs(sidesForCheck) do
-    if proxy.getTankCount(side) ~= 0 then
-      local tankCount = proxy.getTankCount(side)
+    -- A side without a tank gives nil, not 0
+    local tankCount = proxy.getTankCount(side)
 
+    if type(tankCount) == "number" and tankCount > 0 then
       for tankIndex = 1, tankCount, 1 do
         local fluid = proxy.getFluidInTank(side, tankIndex)
 
         for fluidNameIndex, fluidName in pairs(fluidNames) do
-          if fluid.name ~= nil and string.match(fluid.name, escapePattern(fluidName)) then
+          if type(fluid) == "table" and fluid.name ~= nil and string.match(fluid.name, escapePattern(fluidName)) then
             table.remove(fluidNames, fluidNameIndex)
             fluidStorageDescriptor[fluidName] = {side = side, tank = tankIndex}
             break

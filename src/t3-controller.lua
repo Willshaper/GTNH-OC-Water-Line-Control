@@ -117,12 +117,14 @@ function t3controller:initStateMachine()
       )
 
       local countToAdd = self.requiredCount
+      -- An empty tank has no amount
+      local amount = type(fluidInTank) == "table" and fluidInTank.amount or 0
 
-      if fluidInTank.amount < self.requiredCount then
+      if amount < self.requiredCount then
         self:adminDisable()
         event.push("log_warning", "[T3] Not enough Polyaluminium Chloride for craft")
 
-        countToAdd = fluidInTank.amount - (fluidInTank.amount % 100000)
+        countToAdd = amount - (amount % 100000)
       end
 
       local _, result = self.transposerProxy.transferFluid(

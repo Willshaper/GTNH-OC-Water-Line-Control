@@ -1,5 +1,6 @@
 local event = require("event")
 local term = require("term")
+local computer = require("computer")
 
 local classBuilder = require("lib.class-builder.index")
 local componentDiscover = require("lib.component-discover.index")
@@ -11,6 +12,8 @@ local preEndTicks = 200
 
 ---@class LineController
 ---@field lastWorkProgress integer
+---@field workMaxProgress integer
+---@field progressReadAt number|nil
 ---@field isPreEndSent boolean
 ---@field wasWorking boolean
 ---@field controllers ControllersConfig
@@ -21,6 +24,8 @@ local lineController = {}
 ---@return LineController
 function lineController:constructor()
   self.lastWorkProgress = 0
+  self.workMaxProgress = 0
+  self.progressReadAt = nil
   self.isPreEndSent = false
 
   return self
@@ -79,6 +84,10 @@ function lineController:loop()
   if hasWork == true then
     self.lastWorkProgress = workProgress
   end
+
+  -- For the screen, which counts on from here instead of asking the plant every second
+  self.workMaxProgress = hasWork == true and workMaxProgress or 0
+  self.progressReadAt = computer.uptime()
 end
 
 ---Log the units running in the cycle that just started
@@ -97,15 +106,19 @@ function lineController:logCycleStart()
   event.push("log_debug", "[Line] Cycle started: "..(#running > 0 and table.concat(running, " ") or "no units"))
 end
 
----Get the progress of the running cycle in ticks, 0 and 0 when the plant isn't running
+---Get the progress of the running cycle in ticks, 0 and 0 when the plant isn't running.
+---Counted on from the last loop, which reads the plant every few seconds. The next cycle starts in
+---the tick the last one ends, so past the end it counts into the next one
 ---@return integer progress
 ---@return integer maxProgress
 function lineController:getCycleProgress()
-  if self.controllerProxy == nil or self.controllerProxy.hasWork() == false then
+  if self.progressReadAt == nil or self.workMaxProgress == 0 then
     return 0, 0
   end
 
-  return self.controllerProxy.getWorkProgress(), self.controllerProxy.getWorkMaxProgress()
+  local progress = self.lastWorkProgress + math.floor((computer.uptime() - self.progressReadAt) * 20)
+
+  return progress % self.workMaxProgress, self.workMaxProgress
 end
 
 ---Enable line controller, if it is switched off

@@ -57,7 +57,7 @@ end
 
 ---Loop
 function t5controller:loop()
-  self.gtSensorParser:getInformation()
+  self:readState()
   self.stateMachine:loop()
 end
 
@@ -69,7 +69,7 @@ function t5controller:getCurrentState()
   end
 
   -- A unit that may no longer work still finishes the cycle it is running
-  if self.controllerProxy.hasWork() == false then
+  if self.isWorking == false then
     if self.controllerProxy.isWorkAllowed() == false then
       return "Controller disabled"
     end
@@ -120,12 +120,12 @@ function t5controller:initStateMachine()
       end
     end,
     onUpdate = function ()
-      if self.controllerProxy.getWorkProgress() > 900 then
+      if self.isWorking == true and self.controllerProxy.getWorkProgress() > 900 then
         self.stateMachine:setState("waitEnd")
         return
       end
 
-      if self.controllerProxy.hasWork() == true then
+      if self.isWorking == true then
         self.stateMachine.data.iterations = 0
         self.stateMachine:setState("heating")
       end

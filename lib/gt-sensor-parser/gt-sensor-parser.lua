@@ -27,6 +27,11 @@ function gtSensorParser:getInformation()
   self.sensorData = self.gtMachineProxy.getSensorInformation()
 end
 
+---Forget the information, so nothing reads old values
+function gtSensorParser:clear()
+  self.sensorData = {}
+end
+
 ---Get number from line of gt sensor information
 ---@param line integer
 ---@param withLabel? boolean

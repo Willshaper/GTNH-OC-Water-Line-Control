@@ -83,7 +83,7 @@ end
 
 ---Loop
 function t8controller:loop()
-  self.gtSensorParser:getInformation()
+  self:readState()
   self.stateMachine:loop()
 end
 
@@ -95,7 +95,7 @@ function t8controller:getCurrentState()
   end
 
   -- A unit that may no longer work still finishes the cycle it is running
-  if self.controllerProxy.hasWork() == false then
+  if self.isWorking == false then
     if self.controllerProxy.isWorkAllowed() == false then
       return "Controller disabled"
     end
@@ -143,7 +143,7 @@ end
 function t8controller:initStateMachine()
   self.stateMachine:createState("idle", "Idle", {
     onUpdate = function ()
-      if self.controllerProxy.hasWork() == true then
+      if self.isWorking == true then
         if self.gtSensorParser:stringHas(#self.gtSensorParser.sensorData, false, "Yes") == true then
           self.stateMachine:setState("waitEnd")
         else

@@ -1,11 +1,29 @@
 ---@class BaseController
 ---@field controllerProxy gt_machine
+---@field gtSensorParser GtSensorParser
+---@field stateMachine? StateMachine
 ---@field needsAttention boolean
 ---@field attentionReason string
+---@field isWorking boolean Whether the unit ran a recipe when the loop last read it
 local baseController = {
   needsAttention = false,
-  attentionReason = ""
+  attentionReason = "",
+  isWorking = false
 }
+
+---Read whether the unit works, and its sensor information when something uses it. GregTech builds that
+---information for every call, and an idle unit in its Idle or Wait End state doesn't read it
+function baseController:readState()
+  self.isWorking = self.controllerProxy.hasWork() == true
+
+  local state = self.stateMachine ~= nil and self.stateMachine:getCurrentStateKey() or "idle"
+
+  if self.isWorking or (state ~= "idle" and state ~= "waitEnd") then
+    self.gtSensorParser:getInformation()
+  else
+    self.gtSensorParser:clear()
+  end
+end
 
 ---Switch the unit off after a fault. The Quantity Controller won't switch it on again until the player does
 ---@param reason? string What is wrong, e.g. "Not enough Polyaluminium Chloride for craft"

@@ -1,5 +1,6 @@
 local event = require("event")
 local term = require("term")
+local computer = require("computer")
 
 local classBuilder = require("lib.class-builder.index")
 local componentDiscover = require("lib.component-discover.index")
@@ -20,6 +21,9 @@ local fluidNames = {
   "grade8purifiedwater",
   "stablebaryonicmatter",
 }
+
+---Seconds between reads of the stock for the screen
+local stockReadSeconds = 10
 
 ---Get the tier which makes the fluid at an index of fluidNames
 ---@param index integer
@@ -46,6 +50,8 @@ end
 ---@field controllers ControllersConfig
 ---@field meInterfaceProxy me_interface
 ---@field waterLevels number[]
+---@field waterLevelsReadAt number
+---@field isFluidLookupBroken boolean
 ---@field isTierActive boolean[]
 ---@field lastDecision string|nil
 ---@field isAttentionLogged boolean[]
@@ -68,6 +74,8 @@ function quantityController:constructor(controlMode, meInterfaceAddress, minQty,
   self.waterThresholds = waterThresholds
 
   self.waterLevels = {0, 0, 0, 0, 0, 0, 0, 0, 0}
+  self.waterLevelsReadAt = 0
+  self.isFluidLookupBroken = false
   self.isTierActive = {false, false, false, false, false, false, false, false}
   self.lastDecision = nil
   self.isAttentionLogged = {}
@@ -122,7 +130,10 @@ function quantityController:loop()
     return
   end
 
-  self:updateWaterLevels()
+  -- Only the screen uses these; the choice before each cycle end reads them fresh
+  if computer.uptime() - self.waterLevelsReadAt >= stockReadSeconds then
+    self:updateWaterLevels()
+  end
 end
 
 ---Log units that need attention after a fault, and let units that were switched on by hand be used again
@@ -421,17 +432,35 @@ end
 ---@private
 function quantityController:updateWaterLevels()
   local waterLevels = {0, 0, 0, 0, 0, 0, 0, 0, 0}
-  local fluids = self.meInterfaceProxy.getFluidsInNetwork() or {}
+  local proxy = self.meInterfaceProxy
 
-  for _, fluid in ipairs(fluids) do
+  -- Looking up the 9 fluids costs the server far less than the list of every fluid in the network (GTNH 2.9)
+  if proxy.getFluidInNetwork ~= nil and self.isFluidLookupBroken ~= true then
     for index, fluidName in ipairs(fluidNames) do
-      if fluid.name == fluidName then
-        waterLevels[index] = fluid.amount or 0
+      local isOk, fluid = pcall(proxy.getFluidInNetwork, fluidName)
+
+      if not isOk then
+        event.push("log_debug", "[QC] Looking up one fluid failed, reading the whole list instead: "..tostring(fluid))
+        self.isFluidLookupBroken = true
+        return self:updateWaterLevels()
+      end
+
+      waterLevels[index] = type(fluid) == "table" and (fluid.amount or fluid.size) or 0
+    end
+  else
+    local fluids = proxy.getFluidsInNetwork() or {}
+
+    for _, fluid in ipairs(fluids) do
+      for index, fluidName in ipairs(fluidNames) do
+        if fluid.name == fluidName then
+          waterLevels[index] = fluid.amount or 0
+        end
       end
     end
   end
 
   self.waterLevels = waterLevels
+  self.waterLevelsReadAt = computer.uptime()
 end
 
 return classBuilder.createClass(quantityController, quantityController.constructor, "QuantityController")

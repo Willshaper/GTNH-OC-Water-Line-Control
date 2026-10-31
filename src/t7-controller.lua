@@ -85,7 +85,7 @@ end
 
 ---Loop
 function t7controller:loop()
-  self.gtSensorParser:getInformation()
+  self:readState()
   self.stateMachine:loop()
 end
 
@@ -97,7 +97,7 @@ function t7controller:getCurrentState()
   end
 
   -- A unit that may no longer work still finishes the cycle it is running
-  if self.controllerProxy.hasWork() == false then
+  if self.isWorking == false then
     if self.controllerProxy.isWorkAllowed() == false then
       return "Controller disabled"
     end
@@ -164,7 +164,7 @@ function t7controller:initStateMachine()
     onUpdate = function ()
       if self.gtSensorParser:getNumber(2) == 100 then
         self.stateMachine:setState("waitEnd")
-      elseif self.controllerProxy.hasWork() == true then
+      elseif self.isWorking == true then
         self.stateMachine:setState("work")
       end
     end

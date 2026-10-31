@@ -1,4 +1,5 @@
 local component = require("component")
+local computer = require("computer")
 local term = require("term")
 local serialization = require("serialization")
 local unicode = require("unicode")
@@ -9,6 +10,9 @@ local stringUtilities = require("lib.string-utilities.index")
 local formatters = require("lib.simple-gui.formatters")
 local justifier = require("lib.simple-gui.justifier")
 
+---Seconds between frames that draw every line, not only the changed ones
+local fullRenderSeconds = 60
+
 ---@class SimpleGui
 ---@field program Program
 ---@field width number
@@ -17,6 +21,8 @@ local justifier = require("lib.simple-gui.justifier")
 ---@field allowRender boolean
 ---@field registeredKeys table
 ---@field palette table<string, number>
+---@field shownLines? string[] The lines on the screen, nil when it must be drawn again
+---@field fullRenderAt? number
 local simpleGui = {}
 
 ---Constructor
@@ -30,6 +36,9 @@ function simpleGui:constructor(program)
   self.template = nil
 
   self.allowRender = true
+
+  self.shownLines = nil
+  self.fullRenderAt = nil
 
   self.registeredKeys = {}
 
@@ -93,6 +102,7 @@ function simpleGui:setTemplate(template)
   end
 
   component.gpu.setResolution(self.width, self.height)
+  self.shownLines = nil
 end
 
 ---Reset Screen
@@ -102,6 +112,7 @@ function simpleGui:resetScreen()
   component.gpu.setResolution(width, height)
   component.gpu.fill(1, 1, width, height, " ")
   term.setCursor(0, 0)
+  self.shownLines = nil
 end
 
 ---Reset To Template
@@ -110,6 +121,7 @@ function simpleGui:resetToTemplate()
   component.gpu.setResolution(self.width, self.height)
   component.gpu.fill(1, 1, self.width, self.height, " ")
   term.setCursor(0, 0)
+  self.shownLines = nil
 end
 
 ---Bind the graphics card to the screen again if it lost it. A screen that leaves the network
@@ -134,88 +146,135 @@ function simpleGui:ensureScreen()
   return true
 end
 
----Render
+---Render. Only the lines that changed since the last frame are drawn and sent to the screen
 ---@param values table<string, string|number|table|boolean>
 function simpleGui:render(values)
   if not self.allowRender then
     return
   end
 
-  self:ensureScreen()
+  if self:ensureScreen() then
+    self.shownLines = nil
+  end
 
-  local buffer = component.gpu.allocateBuffer(self.width, self.height)
-  component.gpu.setActiveBuffer(buffer)
+  -- Now and then everything is drawn again, in case something else wrote on the screen
+  local now = computer.uptime()
 
-  local y = 1
+  if self.fullRenderAt == nil or now - self.fullRenderAt >= fullRenderSeconds or now < self.fullRenderAt then
+    self.shownLines = nil
+  end
 
-  for _, line in pairs(self.template.lines) do
-    component.gpu.setBackground(self.template.background)
-    component.gpu.setForeground(self.template.foreground)
+  local lines = {}
+  local changed = {}
 
+  for y, line in ipairs(self.template.lines) do
     local renderedString = line
     renderedString = self:renderConditions(renderedString, values)
     renderedString = self:renderValues(renderedString, values)
     renderedString = self:renderWidgets(renderedString, values, y)
     renderedString = self:renderLineContentJustify(renderedString)
 
-    local x = 1
-    local i = 1
+    lines[y] = renderedString
 
-    while i <= #renderedString do
-      local symbol = renderedString:sub(i, i)
-      if symbol == "&" then
-        local colorString = ""
-        local isBackgroundColor = false
-
-        if renderedString:sub(i + 1, i + 1) == "&" then
-          isBackgroundColor = true
-          i = i + 1
-        end
-
-        repeat
-          i = i + 1
-          local next = renderedString:sub(i, i)
-          if next ~= ";" then
-            colorString = colorString .. next
-          end
-        until next == ";"
-
-        local color
-        if self.palette[colorString] then
-          color = self.palette[colorString]
-        else
-          local hex = tonumber(colorString)
-          if hex then
-              color = hex
-          end
-        end
-
-        if color then
-          if isBackgroundColor then
-            component.gpu.setBackground(color)
-          else
-            component.gpu.setForeground(color)
-          end
-        end
-
-        i = i + 1
-      else
-        -- Take the whole UTF-8 character, so symbols like "▶" are drawn as one
-        local byte = symbol:byte()
-        local length = byte >= 0xF0 and 4 or byte >= 0xE0 and 3 or byte >= 0xC0 and 2 or 1
-        local character = renderedString:sub(i, i + length - 1)
-
-        component.gpu.set(x, y, character)
-        x = x + unicode.charWidth(character)
-        i = i + length
-      end
+    if self.shownLines == nil or self.shownLines[y] ~= renderedString then
+      table.insert(changed, y)
     end
-
-    y = y + 1
   end
 
-  component.gpu.bitblt(0, 1, 1, self.width, self.height, buffer, 1, 1)
-  component.gpu.freeAllBuffers()
+  if self.shownLines == nil then
+    self.fullRenderAt = now
+  end
+
+  self.shownLines = lines
+
+  if #changed == 0 then
+    return
+  end
+
+  local gpu = component.gpu
+  local buffer = gpu.allocateBuffer(self.width, self.height)
+  gpu.setActiveBuffer(buffer)
+
+  for _, y in ipairs(changed) do
+    self:drawLine(lines[y], y)
+  end
+
+  gpu.setActiveBuffer(0)
+
+  for _, y in ipairs(changed) do
+    gpu.bitblt(0, 1, y, self.width, 1, buffer, 1, y)
+  end
+
+  gpu.freeAllBuffers()
+end
+
+---Draw a rendered line with its colour codes. Text in one colour is drawn with one call
+---@param line string
+---@param y integer
+---@private
+function simpleGui:drawLine(line, y)
+  local gpu = component.gpu
+  local foreground, background = self.template.foreground, self.template.background
+  local x = 1
+  local i = 1
+  local run = {}
+
+  gpu.setBackground(background)
+  gpu.setForeground(foreground)
+
+  local function drawRun()
+    if #run > 0 then
+      local text = table.concat(run)
+      gpu.set(x, y, text)
+      x = x + unicode.wlen(text)
+      run = {}
+    end
+  end
+
+  while i <= #line do
+    local symbol = line:sub(i, i)
+
+    if symbol == "&" then
+      local colorString = ""
+      local isBackgroundColor = false
+
+      if line:sub(i + 1, i + 1) == "&" then
+        isBackgroundColor = true
+        i = i + 1
+      end
+
+      repeat
+        i = i + 1
+        local next = line:sub(i, i)
+        if next ~= ";" then
+          colorString = colorString .. next
+        end
+      until next == ";" or next == ""
+
+      local color = self.palette[colorString] or tonumber(colorString)
+
+      if isBackgroundColor and color and color ~= background then
+        drawRun()
+        background = color
+        gpu.setBackground(color)
+      elseif not isBackgroundColor and color and color ~= foreground then
+        drawRun()
+        foreground = color
+        gpu.setForeground(color)
+      end
+
+      i = i + 1
+    else
+      -- Take the whole UTF-8 character, so symbols like "▶" stay one
+      local byte = symbol:byte()
+      local length = byte >= 0xF0 and 4 or byte >= 0xE0 and 3 or byte >= 0xC0 and 2 or 1
+
+      table.insert(run, line:sub(i, i + length - 1))
+      i = i + length
+    end
+  end
+
+  drawRun()
 end
 
 ---Render Line Content Justify

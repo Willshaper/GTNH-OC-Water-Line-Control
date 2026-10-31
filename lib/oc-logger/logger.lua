@@ -1,15 +1,21 @@
 local filesystem = require("filesystem")
 local event = require("event")
+local computer = require("computer")
 
 local classBuilder = require("lib.class-builder.index")
 local stringUtilities = require("lib.string-utilities.index")
 
 local logLevels = {debug = 0, info = 1, warning = 2, error = 3}
 
+---Seconds between reads of the real clock, which writes a file. In between it counts on from the uptime
+local clockReadSeconds = 30
+
 ---@class Logger
 ---@field timeCorrection number
 ---@field handlers table<string, LoggerHandler>
 ---@field listenerIds number[]
+---@field clock? number Real time in seconds when the clock was last read
+---@field clockReadAt? number Uptime when the clock was last read
 local logger = {}
 
 ---@return Logger
@@ -121,12 +127,19 @@ end
 function logger:getTime(format)
   format = format or "%d.%m.%Y %H:%M:%S"
 
-  local file = assert(io.open("/tmp/unix.tmp", "w"))
+  local now = computer.uptime()
 
-  file:write("")
-  file:close()
+  if self.clockReadAt == nil or now - self.clockReadAt >= clockReadSeconds or now < self.clockReadAt then
+    local file = assert(io.open("/tmp/unix.tmp", "w"))
 
-  local lastModified = tonumber(string.sub(filesystem.lastModified("/tmp/unix.tmp"), 1, -4)) + self.timeCorrection
+    file:write("")
+    file:close()
+
+    self.clock = tonumber(string.sub(filesystem.lastModified("/tmp/unix.tmp"), 1, -4))
+    self.clockReadAt = now
+  end
+
+  local lastModified = self.clock + math.floor(now - self.clockReadAt) + self.timeCorrection
   local dateTime = tostring(os.date(format, lastModified))
   return dateTime
 end

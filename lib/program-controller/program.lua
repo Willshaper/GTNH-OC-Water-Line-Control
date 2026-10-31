@@ -493,6 +493,15 @@ function program:showError(problem)
   local gpu = component.gpu
   local width, height = self.defaultWidth, self.defaultHeight
 
+  -- A screen that left the network (a broken cable) is unbound, and stays unbound when it comes back
+  if gpu.getScreen() == nil then
+    local screen = component.list("screen")()
+
+    if screen ~= nil then
+      gpu.bind(screen)
+    end
+  end
+
   gpu.freeAllBuffers()
   gpu.setResolution(width, height)
   gpu.setBackground(self.defaultBackground)

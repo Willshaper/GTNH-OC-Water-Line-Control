@@ -1,3 +1,11 @@
+-- OpenOS keeps loaded libraries until the computer restarts, also after this program was updated.
+-- Load this program's own fresh, so an update works without a reboot
+for name in pairs(package.loaded) do
+  if name:match("^lib%.") or name:match("^src%.") then
+    package.loaded[name] = nil
+  end
+end
+
 local event = require("event")
 local term = require("term")
 local keyboard = require("keyboard")

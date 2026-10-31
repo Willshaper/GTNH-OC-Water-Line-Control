@@ -112,12 +112,36 @@ function simpleGui:resetToTemplate()
   term.setCursor(0, 0)
 end
 
+---Bind the graphics card to the screen again if it lost it. A screen that leaves the network
+---(a broken cable) is unbound, and stays unbound when it comes back
+---@return boolean # true if it was bound again
+function simpleGui:ensureScreen()
+  local gpu = component.gpu
+
+  if gpu.getScreen() ~= nil then
+    return false
+  end
+
+  local screen = component.list("screen")()
+
+  if screen == nil then
+    return false
+  end
+
+  gpu.bind(screen)
+  gpu.setResolution(self.width, self.height)
+
+  return true
+end
+
 ---Render
 ---@param values table<string, string|number|table|boolean>
 function simpleGui:render(values)
   if not self.allowRender then
     return
   end
+
+  self:ensureScreen()
 
   local buffer = component.gpu.allocateBuffer(self.width, self.height)
   component.gpu.setActiveBuffer(buffer)

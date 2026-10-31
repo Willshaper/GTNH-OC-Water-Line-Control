@@ -8,7 +8,22 @@ local term = require("term")
 local classBuilder = require("lib.class-builder.index")
 local programUpdater = require("lib.program-controller.program-updater")
 
----Try Catch. An error is pushed as "program_error" with the run it happened in, so the program can recover
+---Get the first line of an error
+---@param message any
+---@return string
+local function firstLine(message)
+  return (tostring(message):match("^[^\n]*"))
+end
+
+---Whether an error is Ctrl+Alt+C, which OpenOS raises in whatever is waiting for a signal
+---@param message any
+---@return boolean
+local function isInterrupt(message)
+  return firstLine(message) == "interrupted"
+end
+
+---Try Catch. An error is pushed as "program_error" with the run it happened in, so the program can recover.
+---Ctrl+Alt+C stops the program as Q does
 ---@param callback function
 ---@param runId? integer
 ---@return function
@@ -16,7 +31,11 @@ local function try(callback, runId)
   return function(...)
     local result = table.pack(xpcall(callback, debug.traceback, ...))
     if not result[1] then
-      event.push("program_error", result[2], runId)
+      if isInterrupt(result[2]) then
+        event.push("exit")
+      else
+        event.push("program_error", result[2], runId)
+      end
     end
     return table.unpack(result, 2, result.n)
   end
@@ -27,13 +46,6 @@ end
 ---@return boolean
 local function isProgramSignal(name)
   return name == "exit" or name == "program_error" or name == "program_edit"
-end
-
----Get the first line of an error
----@param message any
----@return string
-local function firstLine(message)
-  return (tostring(message):match("^[^\n]*"))
 end
 
 ---"4m 30s", "45s"
@@ -100,6 +112,8 @@ end
 ---@field onInit? fun()
 ---@field onStop? fun()
 ---@field onExit? fun()
+---@field onRelease? fun()
+---@field isExiting boolean
 ---@field onError? fun(problem: any)
 ---@field onRecovered? fun()
 ---@field onGiveUp? fun(problem: any)
@@ -127,6 +141,10 @@ function program:constructor(enableAutoUpdate, version, repository, archiveName)
   self.errorListener = nil
   self.pendingErrors = {}
   self.isEditing = false
+  self.isExiting = false
+
+  -- Where a run keeps its release function in package.loaded, which OpenOS keeps until reboot
+  self.leftoverKey = "program-controller.leftover."..tostring(archiveName or "program")
 
   self.runId = 0
   self.runStartedAt = 0
@@ -149,6 +167,7 @@ function program:constructor(enableAutoUpdate, version, repository, archiveName)
   self.onInit = nil
   self.onStop = nil
   self.onExit = nil
+  self.onRelease = nil
   self.onError = nil
   self.onRecovered = nil
   self.onGiveUp = nil
@@ -181,6 +200,13 @@ end
 ---@param callback function
 function program:registerOnExit(callback)
   self.onExit = callback
+end
+
+---Register onRelease function. It stops what lives longer than a run (log listeners, senders), last on exit.
+---When a run ends without exit (Ctrl+Alt+C, a crash), the next start calls it instead
+---@param callback function
+function program:registerOnRelease(callback)
+  self.onRelease = callback
 end
 
 ---Register functions for errors: onError(problem) each time the program waits to start again,
@@ -248,6 +274,18 @@ end
 
 ---Program start
 function program:start()
+  -- OpenOS keeps a program's listeners, timers and threads after it ends. A run that ended without exit
+  -- (Ctrl+Alt+C, a crash) would keep controlling the plant next to this one, so it is stopped first
+  local leftover = package.loaded[self.leftoverKey]
+
+  if type(leftover) == "function" then
+    pcall(leftover)
+  end
+
+  package.loaded[self.leftoverKey] = function()
+    self:release()
+  end
+
   self.defaultWidth, self.defaultHeight = component.gpu.getResolution()
   self.defaultForeground = component.gpu.getForeground()
   self.defaultBackground = component.gpu.getBackground()
@@ -289,7 +327,19 @@ function program:start()
     end
   end))
 
-  self:runUntilExit()
+  -- os.exit is an error too, which goes on to the shell as it is
+  local isOk, problem = xpcall(self.runUntilExit, function (message)
+    return self.isExiting and message or debug.traceback(message)
+  end, self)
+
+  -- Ctrl+Alt+C or an error outside a run: exit as Q does, so nothing of this run keeps going
+  if not isOk and not self.isExiting then
+    self:exit(not isInterrupt(problem) and problem or nil)
+  end
+
+  if not isOk then
+    error(problem, 0)
+  end
 end
 
 ---Run the program, start it again after an error, and exit on Q or when it keeps failing
@@ -560,17 +610,9 @@ end
 ---Program exit
 ---@param exception any
 function program:exit(exception)
+  self.isExiting = true
   self:stopRun()
-
-  if self.keyListener then
-    event.cancel(self.keyListener)
-    self.keyListener = nil
-  end
-
-  if self.errorListener then
-    event.cancel(self.errorListener)
-    self.errorListener = nil
-  end
+  self:cancelListeners()
 
   component.gpu.freeAllBuffers()
   component.gpu.setResolution(self.defaultWidth, self.defaultHeight)
@@ -583,12 +625,14 @@ function program:exit(exception)
     event.push("log_error", exception)
   end
 
-  -- Hand out the log lines while the logger still listens; onExit stops it
-  os.sleep(0)
+  -- Hand out the log lines while the logger still listens; onRelease stops it
+  pcall(os.sleep, 0)
 
   if self.onExit then
     pcall(self.onExit)
   end
+
+  self:release()
 
   if exception then
     io.stderr:write(tostring(exception))
@@ -596,6 +640,34 @@ function program:exit(exception)
   else
     os.exit(0)
   end
+end
+
+---Stop the program's own listeners
+---@private
+function program:cancelListeners()
+  if self.keyListener then
+    event.cancel(self.keyListener)
+    self.keyListener = nil
+  end
+
+  if self.errorListener then
+    event.cancel(self.errorListener)
+    self.errorListener = nil
+  end
+end
+
+---Stop everything of this program that OpenOS would keep after it ends. Called on exit, or by the next start
+---when this one ended without exit. The plant is left as it is: the next start takes over
+---@private
+function program:release()
+  pcall(self.stopRun, self)
+  self:cancelListeners()
+
+  if self.onRelease then
+    pcall(self.onRelease)
+  end
+
+  package.loaded[self.leftoverKey] = nil
 end
 
 ---Display logo

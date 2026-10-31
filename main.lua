@@ -623,6 +623,11 @@ local function onExit()
 
   -- Messages that are still waiting get a few seconds
   discord.finish(10)
+end
+
+---Stop what keeps running after a run: on exit, or when the next start finds this one never got to exit
+local function onRelease()
+  listeners.cancelAll()
   discord.stop()
 
   if config ~= nil then
@@ -634,6 +639,7 @@ program:registerLogo(logo)
 program:registerOnInit(init)
 program:registerOnStop(onStop)
 program:registerOnExit(onExit)
+program:registerOnRelease(onRelease)
 program:registerOnErrors(onError, onRecovered, onGiveUp)
 program:registerOnEdit(onEdit)
 program:registerKeyHandler(keyboard.keys.e, function ()

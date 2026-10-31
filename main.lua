@@ -603,8 +603,8 @@ local function errorText(problem)
 end
 
 local function onError(problem)
-  discord.alert("error", "errors", "Error, starting again", errorText(problem)
-    .." The program starts again every 30 s, and switches the plant off if it still fails after 5 minutes.")
+  discord.alert("error", "errors", "Error, starting again", errorText(problem):gsub("[%.%s]*$", "")
+    ..". The program starts again every 30 s, and switches the plant off if it still fails after 5 minutes.")
 end
 
 local function onRecovered()

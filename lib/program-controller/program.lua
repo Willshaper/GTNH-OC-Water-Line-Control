@@ -502,7 +502,9 @@ function program:showError(problem)
     end
   end
 
+  -- An error in the middle of drawing a frame leaves its buffer active
   gpu.freeAllBuffers()
+  gpu.setActiveBuffer(0)
   gpu.setResolution(width, height)
   gpu.setBackground(self.defaultBackground)
   gpu.fill(1, 1, width, height, " ")

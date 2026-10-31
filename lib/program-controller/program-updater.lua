@@ -200,23 +200,25 @@ end
 function programUpdater:getLatestVersionNumber()
   local versionFileUrl = "https://raw.githubusercontent.com/"..self.program.repository.."/refs/heads/"..self.program.version.branch.."/version.lua"
 
-  local requestResult = internet.request(versionFileUrl)
+  -- No internet card, a broken connection or an error page from GitHub: no update, and no error,
+  -- which would stop the program at the start or make it start again every hour
+  local isOk, version = pcall(function ()
+    local text = ""
 
-  if not requestResult then
+    for chunk in internet.request(versionFileUrl) do
+      text = text..chunk
+    end
+
+    return load(text, "=version.lua", "t", {})()
+  end)
+
+  if not isOk or type(version) ~= "table" or type(version.programVersion) ~= "string"
+    or type(version.configVersion) ~= "number" or type(version.setupVersion) ~= "number"
+    or type(version.gtnhVersion) ~= "string" then
     return nil
   end
 
-  local success, result = pcall(requestResult)
-
-  if not success then
-    return nil
-  end
-
-  for chunk in requestResult do
-    result = result..chunk
-  end
-
-  return load(result)()
+  return version
 end
 
 ---Check if update is needed

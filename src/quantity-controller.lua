@@ -101,8 +101,11 @@ function quantityController:init(controllers)
     self:updateControllerEnablement()
   end)
 
-  listeners.listen("cycle_end", function ()
-    self:checkChosenStarted()
+  listeners.listen("cycle_end", function (_, isNextCycleRunning)
+    -- When the plant stopped, no unit could start
+    if isNextCycleRunning == true then
+      self:checkChosenStarted()
+    end
   end)
 
   -- Enable the right units now, so the next cycle doesn't start every unit that was left on

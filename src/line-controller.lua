@@ -49,7 +49,8 @@ function lineController:loop()
       event.push("cycle_pre_end", true)
     end
 
-    event.push("cycle_end")
+    -- true when the next cycle already runs, false when the plant stopped
+    event.push("cycle_end", hasWork == true)
     self.lastWorkProgress = 0
     self.isPreEndSent = false
 

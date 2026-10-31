@@ -31,34 +31,23 @@ local function compareVersions(a, b)
   end
 end
 
+---Wait for one key, without Enter. Keys without a character (Shift, Ctrl) don't count.
+---Its key_up is waited for too, so a Q pressed here can't reach the program's Q afterwards
 ---@param timeout number
----@return string
-local function readWithTimeout(timeout)
-  local input = ""
+---@return string # the key's character in lower case, or "" when the time ran out
+local function waitForKey(timeout)
+  local deadline = computer.uptime() + timeout
 
-  local startX, startY = term.getCursor()
+  while computer.uptime() < deadline do
+    local signal, _, char, code = event.pull(deadline - computer.uptime(), "key_down")
 
-  while true do
-    local signal, _, char, code = event.pull(timeout, "key_down")
-
-    if signal == nil then
-      return ""
-    elseif code == 28 then
-      term.write("\n")
-      return input
-    elseif char and char >= 32 and char <= 126 then
-      input = input .. string.char(char)
-      term.write(string.char(char))
-    elseif code == 14 and #input > 0 then
-      input = string.sub(input, 1, #input - 1)
-
-      local calculatedX = startX + #input
-
-      term.setCursor(calculatedX, startY)
-      term.write(" ")
-      term.setCursor(calculatedX, startY)
+    if signal ~= nil and char ~= nil and char > 0 then
+      event.pull(2, "key_up", nil, nil, code)
+      return string.char(char):lower()
     end
   end
+
+  return ""
 end
 
 ---@param path string
@@ -166,12 +155,12 @@ function programUpdater:autoUpdate()
     term.write("If you're playing on an older version, the update might break the program.\n\n")
   end
 
-  term.write("Do you want to update [y/n]?\n")
-  term.write("==>")
+  term.write("Press Y to update, any other key to skip (skips in 60 s)\n")
 
-  local userInput = readWithTimeout(60)
-
-  if string.lower(userInput) ~= "y" then
+  if waitForKey(60) ~= "y" then
+    term.write("Skipped.\n")
+    os.sleep(1)
+    term.clear()
     return
   end
 
@@ -188,8 +177,8 @@ function programUpdater:autoUpdate()
     term.write(line.."\n")
   end
 
-  term.write("\nUpdate completed. Press Enter to restart (or wait 30 s)\n")
-  readWithTimeout(30)
+  term.write("\nUpdate completed. Press any key to restart (restarts in 30 s)\n")
+  waitForKey(30)
 
   computer.shutdown(true)
 end
